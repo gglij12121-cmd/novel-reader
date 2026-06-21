@@ -173,6 +173,7 @@ class BiqugeScraper : BaseScraper() {
     }
 
     override suspend fun getChapterContent(chapterUrl: String): String {
+        LogManager.addLog("[$sourceName] 加载章节: $chapterUrl")
         val html = withContext(Dispatchers.IO) {
             val request = Request.Builder().url(chapterUrl)
                 .addHeader("User-Agent", Constants.USER_AGENT)
@@ -180,20 +181,62 @@ class BiqugeScraper : BaseScraper() {
                 .build()
             client.newCall(request).execute().body?.source()?.readUtf8() ?: ""
         }
+        LogManager.addLog("[$sourceName] 章节页长度: ${html.length}")
         val doc = Jsoup.parse(html)
-        // 正文在 #content 或 .content
-        val contentEl = doc.select("#content, .content, #booktext, #chaptercontent").first()
+
+        // biquge5.com 正文在 <article> 标签里
+        val contentEl = doc.select("article, #content, .content, #booktext").first()
         if (contentEl != null) {
-            return contentEl.html()
+            val rawText = contentEl.html()
                 .replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
                 .replace("<p>", "").replace("</p>", "\n")
                 .replace(Regex("<[^>]+>"), "")
+                // 清理广告
                 .replace(Regex("天才一秒记住.*?m\\..*?\\.com"), "")
                 .replace(Regex("手机用户请浏览.*?阅读"), "")
                 .replace(Regex("请记住本书首发域名.*?。"), "")
+                .replace(Regex("第\\(\\d+/\\d+\\)页"), "")
                 .replace(Regex("\n{3,}"), "\n\n")
                 .trim()
+
+            if (rawText.isNotEmpty() && rawText != "章节内容加载失败") {
+                LogManager.addLog("[$sourceName] 内容长度: ${rawText.length}")
+
+                // 检查是否有分页 (下一章链接带 _2 后缀)
+                val nextPageLink = doc.select("a[id=next], a[id=next1]").first()?.attr("href")
+                if (nextPageLink != null && nextPageLink.contains("_2")) {
+                    try {
+                        val nextUrl = if (nextPageLink.startsWith("http")) nextPageLink
+                            else "${Constants.BIQUGE_BASE_URL}$nextPageLink"
+                        val nextHtml = withContext(Dispatchers.IO) {
+                            val req = Request.Builder().url(nextUrl)
+                                .addHeader("User-Agent", Constants.USER_AGENT).build()
+                            client.newCall(req).execute().body?.source()?.readUtf8() ?: ""
+                        }
+                        val nextDoc = Jsoup.parse(nextHtml)
+                        val nextContent = nextDoc.select("article, #content, .content, #booktext").first()
+                        if (nextContent != null) {
+                            val nextText = nextContent.html()
+                                .replace("<br>", "\n").replace("<br/>", "\n")
+                                .replace("<p>", "").replace("</p>", "\n")
+                                .replace(Regex("<[^>]+>"), "")
+                                .replace(Regex("第\\(\\d+/\\d+\\)页"), "")
+                                .replace(Regex("\n{3,}"), "\n\n")
+                                .trim()
+                            if (nextText.isNotEmpty()) {
+                                return rawText + "\n\n" + nextText
+                            }
+                        }
+                    } catch (e: Exception) {
+                        // 分页加载失败不影响主内容
+                    }
+                }
+
+                return rawText
+            }
         }
+
+        LogManager.addLog("[$sourceName] 未找到内容区域")
         return "章节内容加载失败"
     }
 }
