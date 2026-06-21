@@ -95,16 +95,16 @@ class BayiScraper : BaseScraper() {
                 val allDds = ddContainer.select("dd")
 
                 // 书名: dd > h3 > a
-                val titleLink = allDds.selectFirst("h3 a")
+                val titleLink = allDds.first()?.select("h3 a")?.first()
                 val title = titleLink?.text()?.trim() ?: link.text().trim()
                 if (title.isEmpty() || title.length < 2) continue
 
                 // 作者: dd.book_other span
-                val author = allDds.selectFirst("dd.book_other span")?.text()?.trim() ?: ""
+                val author = allDds.select("dd.book_other span").first()?.text()?.trim() ?: ""
 
                 // 最新章节
                 val latestChapter = allDds.select("dd.book_other").lastOrNull()
-                    ?.selectFirst("a")?.text()?.trim() ?: ""
+                    ?.select("a")?.first()?.text()?.trim() ?: ""
 
                 val fullUrl = when {
                     href.startsWith("http") -> href
