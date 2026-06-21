@@ -109,22 +109,25 @@ class BookSourceManager {
      * 从单个书源搜索
      */
     private suspend fun searchFromSource(source: BookSource, keyword: String): SearchResult {
-        return try {
-            // 构建搜索URL
-            val searchUrl = buildSearchUrl(source, keyword)
-            com.reader.novel.ui.components.LogManager.addLog("搜索URL: $searchUrl")
-            com.reader.novel.ui.components.LogManager.addLog("书源: ${source.name}")
+        // 构建搜索URL
+        val searchUrl = buildSearchUrl(source, keyword)
+        com.reader.novel.ui.components.LogManager.addLog("书源: ${source.name}")
+        com.reader.novel.ui.components.LogManager.addLog("搜索URL: $searchUrl")
 
+        return try {
             val userAgent = source.userAgent.ifEmpty {
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
             }
 
+            com.reader.novel.ui.components.LogManager.addLog("正在连接...")
             val doc = Jsoup.connect(searchUrl)
                 .userAgent(userAgent)
                 .timeout(15000)
                 .ignoreContentType(true)
                 .followRedirects(true)
                 .get()
+
+            com.reader.novel.ui.components.LogManager.addLog("连接成功! 标题: ${doc.title()}")
 
             com.reader.novel.ui.components.LogManager.addLog("页面标题: ${doc.title()}")
             com.reader.novel.ui.components.LogManager.addLog("搜索列表规则: ${source.searchList}")
