@@ -317,6 +317,79 @@ class BookSourceManager {
             else -> "$baseUrl/$url"
         }
     }
+
+    /**
+     * 获取章节列表
+     */
+    suspend fun getChapterList(source: BookSource, bookUrl: String): List<com.reader.novel.data.model.Chapter> {
+        return try {
+            val userAgent = source.userAgent.ifEmpty {
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+
+            val doc = Jsoup.connect(bookUrl)
+                .userAgent(userAgent)
+                .timeout(15000)
+                .get()
+
+            val chapters = mutableListOf<com.reader.novel.data.model.Chapter>()
+            val elements = parseRule(doc, source.chapterList)
+
+            elements.forEachIndexed { index, element ->
+                val name = parseRuleForText(element, source.chapterName)
+                val url = parseRuleForAttr(element, source.contentUrl, "href")
+
+                if (name.isNotEmpty() && url.isNotEmpty()) {
+                    val fullUrl = resolveUrl(source.url, url)
+                    chapters.add(
+                        com.reader.novel.data.model.Chapter(
+                            title = name,
+                            url = fullUrl,
+                            chapterIndex = index
+                        )
+                    )
+                }
+            }
+
+            chapters
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /**
+     * 获取章节内容
+     */
+    suspend fun getChapterContent(source: BookSource, chapterUrl: String): String {
+        return try {
+            val userAgent = source.userAgent.ifEmpty {
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+
+            val doc = Jsoup.connect(chapterUrl)
+                .userAgent(userAgent)
+                .timeout(15000)
+                .get()
+
+            val contentRule = source.bookContent
+            if (contentRule.isEmpty()) return "内容加载失败"
+
+            val elements = parseRule(doc, contentRule)
+            if (elements.isEmpty()) return "内容加载失败"
+
+            val content = elements.first()
+            content.html()
+                .replace("<br>", "\n")
+                .replace("<br/>", "\n")
+                .replace("<p>", "\n")
+                .replace("</p>", "")
+                .replace(Regex("<[^>]+>"), "")
+                .replace(Regex("\n{3,}"), "\n\n")
+                .trim()
+        } catch (e: Exception) {
+            "内容加载失败: ${e.message}"
+        }
+    }
 }
 
 data class BookSource(
