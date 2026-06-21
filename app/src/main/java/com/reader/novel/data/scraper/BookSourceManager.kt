@@ -132,6 +132,10 @@ class BookSourceManager {
                 return SearchResult(books = emptyList(), source = source.name, isSuccess = false, errorMessage = "HTTP $statusCode")
             }
 
+            // 打印HTML片段用于调试
+            val htmlPreview = html.take(500).replace("\n", " ").replace("\r", "")
+            com.reader.novel.ui.components.LogManager.addLog("HTML预览: $htmlPreview")
+
             val doc = Jsoup.parse(html)
             val books = mutableListOf<Book>()
 
