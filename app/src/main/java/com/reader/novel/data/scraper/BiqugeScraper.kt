@@ -123,40 +123,77 @@ class BiqugeScraper : BaseScraper() {
     }
 
     override suspend fun getBookDetail(bookUrl: String): Pair<Book, List<Chapter>> {
+        LogManager.addLog("[$sourceName] 加载详情: $bookUrl")
         val html = withContext(Dispatchers.IO) {
             val request = Request.Builder().url(bookUrl)
-                .addHeader("User-Agent", "Mozilla/5.0").build()
+                .addHeader("User-Agent", Constants.USER_AGENT)
+                .addHeader("Accept", "text/html,*/*")
+                .build()
             client.newCall(request).execute().body?.source()?.readUtf8() ?: ""
         }
+        LogManager.addLog("[$sourceName] 详情页长度: ${html.length}")
         val doc = Jsoup.parse(html)
 
-        val title = doc.select("h1, #info h1").first()?.text()?.trim() ?: ""
-        val author = doc.select("#info p").first()?.text()?.replace("作者：", "")?.trim() ?: ""
-        val description = doc.select("#intro").first()?.text()?.trim() ?: ""
+        // 书名
+        val title = doc.select("h1").first()?.text()?.trim() ?: ""
+        // 作者: .info li 里包含"作者"
+        val author = doc.select(".info li").firstOrNull { it.text().contains("作者") }
+            ?.select("a")?.first()?.text()?.trim() ?: ""
+        // 简介: #intro_pc
+        val description = doc.select("#intro_pc").first()?.text()?.trim()
+            ?.replace("简介：", "")?.trim() ?: ""
+        // 封面: .img-thumbnail
+        val coverUrl = doc.select(".img-thumbnail, .book_info img").first()?.attr("src") ?: ""
+        val fullCoverUrl = if (coverUrl.startsWith("http")) coverUrl
+            else if (coverUrl.startsWith("//")) "https:$coverUrl"
+            else "${Constants.BIQUGE_BASE_URL}$coverUrl"
 
-        val book = Book(title = title, author = author, description = description, source = sourceId, sourceUrl = bookUrl)
+        val book = Book(
+            title = title, author = author, description = description,
+            coverUrl = fullCoverUrl, source = sourceId, sourceUrl = bookUrl
+        )
 
+        // 章节列表: .book_list ul li a
         val chapters = mutableListOf<Chapter>()
-        doc.select("#list dl dd a").forEachIndexed { index, element ->
+        val chapterElements = doc.select(".book_list ul li a")
+        LogManager.addLog("[$sourceName] 章节元素数: ${chapterElements.size}")
+        chapterElements.forEachIndexed { index, element ->
             val name = element.text().trim()
             val url = element.attr("href")
             if (name.isNotEmpty()) {
-                val fullUrl = if (url.startsWith("http")) url else "${Constants.BIQUGE_BASE_URL}$url"
+                val fullUrl = if (url.startsWith("http")) url
+                    else if (url.startsWith("/")) "${Constants.BIQUGE_BASE_URL}$url"
+                    else "${Constants.BIQUGE_BASE_URL}/$url"
                 chapters.add(Chapter(title = name, url = fullUrl, chapterIndex = index))
             }
         }
 
+        LogManager.addLog("[$sourceName] 详情加载成功: $title, 章节: ${chapters.size}")
         return Pair(book, chapters)
     }
 
     override suspend fun getChapterContent(chapterUrl: String): String {
         val html = withContext(Dispatchers.IO) {
             val request = Request.Builder().url(chapterUrl)
-                .addHeader("User-Agent", "Mozilla/5.0").build()
+                .addHeader("User-Agent", Constants.USER_AGENT)
+                .addHeader("Accept", "text/html,*/*")
+                .build()
             client.newCall(request).execute().body?.source()?.readUtf8() ?: ""
         }
         val doc = Jsoup.parse(html)
-        val content = doc.select("#content, .content").first()?.text() ?: ""
-        return content.ifEmpty { "章节内容加载失败" }
+        // 正文在 #content 或 .content
+        val contentEl = doc.select("#content, .content, #booktext, #chaptercontent").first()
+        if (contentEl != null) {
+            return contentEl.html()
+                .replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
+                .replace("<p>", "").replace("</p>", "\n")
+                .replace(Regex("<[^>]+>"), "")
+                .replace(Regex("天才一秒记住.*?m\\..*?\\.com"), "")
+                .replace(Regex("手机用户请浏览.*?阅读"), "")
+                .replace(Regex("请记住本书首发域名.*?。"), "")
+                .replace(Regex("\n{3,}"), "\n\n")
+                .trim()
+        }
+        return "章节内容加载失败"
     }
 }

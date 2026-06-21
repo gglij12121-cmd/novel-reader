@@ -68,20 +68,33 @@ class SearchRepository @Inject constructor(
         val lowerKeyword = keyword.lowercase()
         return uniqueBooks.sortedWith(compareByDescending<Book> { book ->
             val title = book.title.lowercase()
+            // 去掉 [xxx] 标签
+            val cleanTitle = title.replace(Regex("\\[.*?\\]"), "").trim()
             when {
                 // 完全匹配最优先
-                title == lowerKeyword -> 100
-                // 书名以关键词开头
-                title.startsWith(lowerKeyword) -> 90
-                // 书名包含关键词（去掉方括号标签后匹配）
-                title.replace(Regex("\\[.*?\\]"), "").trim().startsWith(lowerKeyword) -> 85
-                // 书名包含关键词
-                title.contains(lowerKeyword) -> 80
+                cleanTitle == lowerKeyword -> 200
+                title == lowerKeyword -> 200
+                // 去标签后以关键词开头，且标题较短（更可能是原作）
+                cleanTitle.startsWith(lowerKeyword) && cleanTitle.length <= lowerKeyword.length + 4 -> 180
+                // 以关键词开头
+                cleanTitle.startsWith(lowerKeyword) -> 150
+                title.startsWith(lowerKeyword) -> 140
+                // 包含关键词，标题越短越优先（原作通常比同人标题短）
+                title.contains(lowerKeyword) -> {
+                    val extraLen = title.length - lowerKeyword.length
+                    when {
+                        extraLen <= 2 -> 120  // 如 "斗破苍穹" vs "斗破苍穹2"
+                        extraLen <= 6 -> 100  // 如 "斗破苍穹同人"
+                        else -> 80            // 长标题同人
+                    }
+                }
                 // 作者包含关键词
                 book.author.lowercase().contains(lowerKeyword) -> 50
-                // 其他
                 else -> 0
             }
+        }.thenBy { book ->
+            // 同分情况下，标题短的优先
+            book.title.length
         }.thenByDescending { book ->
             // 内置源优先
             when (book.source) {
