@@ -3,6 +3,7 @@ package com.reader.novel.data.scraper
 import com.reader.novel.data.model.Book
 import com.reader.novel.data.model.Chapter
 import com.reader.novel.data.model.SearchResult
+import com.reader.novel.ui.components.LogManager
 import com.reader.novel.util.Constants
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -27,7 +28,9 @@ class BayiScraper : BaseScraper() {
 
     override suspend fun search(keyword: String): SearchResult {
         return try {
+            LogManager.addLog("[$sourceName] 开始搜索: $keyword")
             val url = "${Constants.BAYI_SEARCH_URL}?q=${java.net.URLEncoder.encode(keyword, "UTF-8")}"
+            LogManager.addLog("[$sourceName] URL: $url")
 
             val html = withContext(Dispatchers.IO) {
                 val request = Request.Builder()
@@ -38,6 +41,8 @@ class BayiScraper : BaseScraper() {
                 client.newCall(request).execute().body?.source()?.readUtf8() ?: ""
             }
 
+            LogManager.addLog("[$sourceName] 响应长度: ${html.length}")
+
             if (html.isEmpty()) {
                 return SearchResult(books = emptyList(), source = sourceId, isSuccess = false, errorMessage = "空响应")
             }
@@ -45,12 +50,18 @@ class BayiScraper : BaseScraper() {
             val doc = Jsoup.parse(html)
             val books = mutableListOf<Book>()
 
-            val elements = doc.select("li, div.result-item, div.book-item, dt")
-            for (element in elements) {
+            // 81zw.cc 使用 dt/dd 结构，和 biquge5.com 相同
+            val dtElements = doc.select("dt")
+            LogManager.addLog("[$sourceName] 找到dt元素: ${dtElements.size}")
+
+            for (dt in dtElements) {
                 try {
-                    val link = element.select("a[href]").first() ?: continue
-                    val title = link.text().trim().ifEmpty { link.attr("title") }
-                    val href = link.attr("href")
+                    val container = dt.parent() ?: continue
+                    val dds = container.select("dd")
+
+                    val titleLink = dds.selectFirst("h3 a") ?: continue
+                    val title = titleLink.text().trim()
+                    val href = titleLink.attr("href")
 
                     if (title.isEmpty() || title.length < 2 || href.isEmpty() || href == "#") continue
 
@@ -58,17 +69,40 @@ class BayiScraper : BaseScraper() {
                         else if (href.startsWith("/")) "${Constants.BAYI_BASE_URL}$href"
                         else "${Constants.BAYI_BASE_URL}/$href"
 
-                    val author = element.select(".author, .s4, .book-author").first()?.text()?.trim() ?: ""
-                    val description = element.select(".intro, .s6, .book-desc").first()?.text()?.trim() ?: ""
+                    val author = dds.selectFirst("dd.book_other span")?.text()?.trim() ?: ""
+                    val latestChapter = dds.select("dd.book_other").lastOrNull()?.selectFirst("a")?.text()?.trim() ?: ""
 
                     books.add(Book(
-                        title = title, author = author, description = description,
-                        source = sourceId, sourceUrl = fullUrl
+                        title = title, author = author, description = "",
+                        source = sourceId, sourceUrl = fullUrl, latestChapter = latestChapter
                     ))
                 } catch (e: Exception) {
                     continue
                 }
             }
+
+            // 兜底
+            if (books.isEmpty()) {
+                for (element in doc.select("li")) {
+                    try {
+                        val link = element.select("a[href]").first() ?: continue
+                        val title = link.text().trim().ifEmpty { link.attr("title") }
+                        val href = link.attr("href")
+                        if (title.isEmpty() || title.length < 2 || href.isEmpty() || href == "#") continue
+
+                        val fullUrl = if (href.startsWith("http")) href
+                            else if (href.startsWith("/")) "${Constants.BAYI_BASE_URL}$href"
+                            else "${Constants.BAYI_BASE_URL}/$href"
+
+                        val author = element.select(".author, .s4, .book-author").first()?.text()?.trim() ?: ""
+                        books.add(Book(
+                            title = title, author = author, source = sourceId, sourceUrl = fullUrl
+                        ))
+                    } catch (e: Exception) { continue }
+                }
+            }
+
+            LogManager.addLog("[$sourceName] 找到书籍: ${books.size}")
 
             if (books.isEmpty()) {
                 SearchResult(books = emptyList(), source = sourceId, isSuccess = false, errorMessage = "未找到")
@@ -76,6 +110,7 @@ class BayiScraper : BaseScraper() {
                 SearchResult(books = books, source = sourceId, isSuccess = true)
             }
         } catch (e: Exception) {
+            LogManager.addLog("[$sourceName] 异常: ${e.javaClass.simpleName}: ${e.message}")
             SearchResult(books = emptyList(), source = sourceId, isSuccess = false, errorMessage = e.message)
         }
     }
