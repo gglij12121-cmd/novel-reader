@@ -38,7 +38,7 @@ class SearchViewModel @Inject constructor(
 
             try {
                 val results = searchRepository.searchAll(keyword)
-                val allBooks = searchRepository.mergeResults(results)
+                val allBooks = searchRepository.mergeResults(results, keyword)
 
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,

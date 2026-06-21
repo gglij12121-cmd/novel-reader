@@ -5,12 +5,16 @@ import androidx.lifecycle.viewModelScope
 import com.reader.novel.data.model.Book
 import com.reader.novel.data.model.Chapter
 import com.reader.novel.data.repository.BookRepository
+import com.reader.novel.data.scraper.BookSource
 import com.reader.novel.data.scraper.ScraperManager
+import com.reader.novel.ui.components.LogManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -36,16 +40,37 @@ class DetailViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
 
             try {
-                val scraper = scraperManager.getScraper(source)
-                if (scraper == null) {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        error = "不支持的来源: $source"
-                    )
-                    return@launch
+                LogManager.addLog("[详情] 加载: $bookUrl, 来源: $source")
+
+                val result = withContext(Dispatchers.IO) {
+                    // 先尝试内置爬虫
+                    val scraper = scraperManager.getScraper(source)
+                    if (scraper != null) {
+                        LogManager.addLog("[详情] 使用内置爬虫: $source")
+                        return@withContext scraper.getBookDetail(bookUrl)
+                    }
+
+                    // 再尝试书源
+                    val bookSource = scraperManager.getBookSourceManager()
+                        .getAvailableSources().find { it.name == source }
+                    if (bookSource != null) {
+                        LogManager.addLog("[详情] 使用书源: ${bookSource.name}")
+                        val bsm = scraperManager.getBookSourceManager()
+                        val chapters = bsm.getChapterList(bookSource, bookUrl)
+                        // 构造简单的 Book 对象
+                        val book = Book(
+                            title = "",
+                            author = "",
+                            source = source,
+                            sourceUrl = bookUrl
+                        )
+                        return@withContext Pair(book, chapters)
+                    }
+
+                    throw Exception("不支持的来源: $source")
                 }
 
-                val (book, chapters) = scraper.getBookDetail(bookUrl)
+                val (book, chapters) = result
                 currentBook = book
 
                 // 检查是否在书架上
@@ -59,6 +84,8 @@ class DetailViewModel @Inject constructor(
                     currentBookId = localBook?.id ?: 0L
                 }
 
+                LogManager.addLog("[详情] 加载成功: ${book.title}, 章节数: ${chapters.size}")
+
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     book = book,
@@ -67,6 +94,7 @@ class DetailViewModel @Inject constructor(
                     isChapterListExpanded = true
                 )
             } catch (e: Exception) {
+                LogManager.addLog("[详情] 异常: ${e.javaClass.simpleName}: ${e.message}")
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     error = "加载失败: ${e.message}"

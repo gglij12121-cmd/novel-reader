@@ -54,13 +54,41 @@ class SearchRepository @Inject constructor(
      * @param results 各来源的搜索结果
      * @return 合并后的书籍列表
      */
-    fun mergeResults(results: List<SearchResult>): List<Book> {
+    fun mergeResults(results: List<SearchResult>, keyword: String = ""): List<Book> {
         val allBooks = results
             .filter { it.isSuccess }
             .flatMap { it.books }
 
-        // 简单去重：根据书名+作者
-        return allBooks.distinctBy { "${it.title}_${it.author}" }
+        // 去重：根据书名+作者
+        val uniqueBooks = allBooks.distinctBy { "${it.title}_${it.author}" }
+
+        if (keyword.isBlank()) return uniqueBooks
+
+        // 按匹配度排序
+        val lowerKeyword = keyword.lowercase()
+        return uniqueBooks.sortedWith(compareByDescending<Book> { book ->
+            val title = book.title.lowercase()
+            when {
+                // 完全匹配最优先
+                title == lowerKeyword -> 100
+                // 书名以关键词开头
+                title.startsWith(lowerKeyword) -> 90
+                // 书名包含关键词（去掉方括号标签后匹配）
+                title.replace(Regex("\\[.*?\\]"), "").trim().startsWith(lowerKeyword) -> 85
+                // 书名包含关键词
+                title.contains(lowerKeyword) -> 80
+                // 作者包含关键词
+                book.author.lowercase().contains(lowerKeyword) -> 50
+                // 其他
+                else -> 0
+            }
+        }.thenByDescending { book ->
+            // 内置源优先
+            when (book.source) {
+                "biquge", "bayi", "qidian" -> 1
+                else -> 0
+            }
+        })
     }
 
     /**
