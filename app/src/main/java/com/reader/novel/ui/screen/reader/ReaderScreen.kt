@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -13,7 +14,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -26,14 +26,7 @@ import com.reader.novel.ui.screen.reader.components.ReaderSettingsPanel
 import com.reader.novel.ui.screen.reader.components.presetFonts
 
 /**
- * 阅读器页面 - 全新设计
- *
- * 功能：
- * 1. 显示章节正文
- * 2. 上下章切换
- * 3. 阅读设置面板（字体、护眼模式）
- * 4. 目录侧边栏
- * 5. 夜间模式
+ * 阅读器页面
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,32 +39,17 @@ fun ReaderScreen(
     val uiState by viewModel.uiState.collectAsState()
     val readerSettings by viewModel.readerSettings.collectAsState()
 
-    // 控制菜单显示
     var showMenu by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showChapterList by remember { mutableStateOf(false) }
 
-    // 初始化
     LaunchedEffect(bookId) {
         viewModel.initialize(bookId, initialChapterIndex)
     }
 
-    // 背景颜色
-    val bgColor = ReaderColors.allColors.getOrElse(readerSettings.bgColorIndex) {
-        ReaderColors.White
-    }
-
-    // 文字颜色（深色背景用白字）
-    val textColor = if (readerSettings.bgColorIndex >= 5) {
-        Color.White
-    } else {
-        Color.Black
-    }
-
-    // 字体
-    val fontFamily = presetFonts.getOrElse(readerSettings.fontIndex) {
-        presetFonts[0]
-    }.fontFamily
+    val bgColor = ReaderColors.allColors.getOrElse(readerSettings.bgColorIndex) { ReaderColors.White }
+    val textColor = if (readerSettings.bgColorIndex >= 5) Color.White else Color.Black
+    val fontFamily = presetFonts.getOrElse(readerSettings.fontIndex) { presetFonts[0] }.fontFamily
 
     Box(
         modifier = Modifier
@@ -89,7 +67,6 @@ fun ReaderScreen(
                 )
             }
             else -> {
-                // 正文内容
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -99,7 +76,6 @@ fun ReaderScreen(
                 ) {
                     Spacer(modifier = Modifier.height(48.dp))
 
-                    // 章节标题
                     Text(
                         text = uiState.chapterTitle,
                         style = TextStyle(
@@ -111,7 +87,6 @@ fun ReaderScreen(
                         modifier = Modifier.padding(bottom = 16.dp)
                     )
 
-                    // 正文内容
                     Text(
                         text = uiState.content,
                         style = TextStyle(
@@ -124,15 +99,12 @@ fun ReaderScreen(
 
                     Spacer(modifier = Modifier.height(32.dp))
 
-                    // 上下章按钮
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         if (viewModel.hasPreviousChapter()) {
-                            OutlinedButton(
-                                onClick = { viewModel.loadPreviousChapter() }
-                            ) {
+                            OutlinedButton(onClick = { viewModel.loadPreviousChapter() }) {
                                 Icon(
                                     imageVector = Icons.Default.ArrowBack,
                                     contentDescription = null,
@@ -146,9 +118,7 @@ fun ReaderScreen(
                         }
 
                         if (viewModel.hasNextChapter()) {
-                            Button(
-                                onClick = { viewModel.loadNextChapter() }
-                            ) {
+                            Button(onClick = { viewModel.loadNextChapter() }) {
                                 Text("下一章")
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Icon(
@@ -165,43 +135,29 @@ fun ReaderScreen(
             }
         }
 
-        // 顶部菜单栏
         if (showMenu) {
             TopAppBar(
-                title = {
-                    Text(
-                        text = uiState.chapterTitle,
-                        maxLines = 1
-                    )
-                },
+                title = { Text(uiState.chapterTitle, maxLines = 1) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
-                            imageVector = Icons.Default.ArrowBack,
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "返回"
                         )
                     }
                 },
                 actions = {
-                    // 目录按钮
                     IconButton(onClick = {
                         showChapterList = true
                         showMenu = false
                     }) {
-                        Icon(
-                            imageVector = Icons.Default.List,
-                            contentDescription = "目录"
-                        )
+                        Icon(imageVector = Icons.Default.List, contentDescription = "目录")
                     }
-                    // 设置按钮
                     IconButton(onClick = {
                         showSettings = true
                         showMenu = false
                     }) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "设置"
-                        )
+                        Icon(imageVector = Icons.Default.Settings, contentDescription = "设置")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -210,7 +166,6 @@ fun ReaderScreen(
             )
         }
 
-        // 底部信息栏
         if (showMenu) {
             BottomAppBar(
                 containerColor = bgColor.copy(alpha = 0.9f),
@@ -228,8 +183,6 @@ fun ReaderScreen(
                         style = MaterialTheme.typography.bodyMedium,
                         color = textColor
                     )
-
-                    // 上下章按钮
                     Row {
                         IconButton(
                             onClick = { viewModel.loadPreviousChapter() },
@@ -238,14 +191,9 @@ fun ReaderScreen(
                             Icon(
                                 imageVector = Icons.Default.SkipPrevious,
                                 contentDescription = "上一章",
-                                tint = if (viewModel.hasPreviousChapter()) {
-                                    textColor
-                                } else {
-                                    textColor.copy(alpha = 0.3f)
-                                }
+                                tint = if (viewModel.hasPreviousChapter()) textColor else textColor.copy(alpha = 0.3f)
                             )
                         }
-
                         IconButton(
                             onClick = { viewModel.loadNextChapter() },
                             enabled = viewModel.hasNextChapter()
@@ -253,11 +201,7 @@ fun ReaderScreen(
                             Icon(
                                 imageVector = Icons.Default.SkipNext,
                                 contentDescription = "下一章",
-                                tint = if (viewModel.hasNextChapter()) {
-                                    textColor
-                                } else {
-                                    textColor.copy(alpha = 0.3f)
-                                }
+                                tint = if (viewModel.hasNextChapter()) textColor else textColor.copy(alpha = 0.3f)
                             )
                         }
                     }
@@ -265,7 +209,6 @@ fun ReaderScreen(
             }
         }
 
-        // 设置面板
         if (showSettings) {
             ReaderSettingsPanel(
                 settings = readerSettings,
@@ -279,7 +222,6 @@ fun ReaderScreen(
             )
         }
 
-        // 章节列表
         if (showChapterList) {
             ChapterListDrawer(
                 chapters = viewModel.getChapterList(),

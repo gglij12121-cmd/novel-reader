@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -27,14 +28,7 @@ import com.reader.novel.ui.components.LoadingIndicator
 import com.reader.novel.ui.components.SourceTag
 
 /**
- * 小说详情页 - 全新设计
- *
- * 功能：
- * 1. 书籍封面、简介、作者等信息
- * 2. 章节目录列表
- * 3. 加入/移出书架
- * 4. 开始阅读
- * 5. 离线缓存
+ * 小说详情页
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,7 +41,6 @@ fun DetailScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
-    // 加载数据
     LaunchedEffect(bookUrl, source) {
         viewModel.loadBookDetail(bookUrl, source)
     }
@@ -59,13 +52,12 @@ fun DetailScreen(
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
-                            imageVector = Icons.Default.ArrowBack,
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "返回"
                         )
                     }
                 },
                 actions = {
-                    // 书架按钮
                     IconButton(onClick = { viewModel.toggleBookshelf() }) {
                         Icon(
                             imageVector = if (uiState.isOnBookshelf) {
@@ -79,13 +71,6 @@ fun DetailScreen(
                             } else {
                                 MaterialTheme.colorScheme.onSurface
                             }
-                        )
-                    }
-                    // 分享按钮
-                    IconButton(onClick = { /* TODO: 分享功能 */ }) {
-                        Icon(
-                            imageVector = Icons.Default.Share,
-                            contentDescription = "分享"
                         )
                     }
                 }
@@ -114,7 +99,7 @@ fun DetailScreen(
                         .fillMaxSize()
                         .padding(paddingValues)
                 ) {
-                    // 书籍信息区域 - 精美设计
+                    // 书籍信息区域
                     item {
                         BookInfoSection(
                             coverUrl = book.coverUrl,
@@ -123,9 +108,7 @@ fun DetailScreen(
                             source = book.source,
                             status = book.status,
                             latestChapter = book.latestChapter,
-                            description = book.description,
-                            wordCount = book.wordCount,
-                            category = book.category
+                            description = book.description
                         )
                     }
 
@@ -185,9 +168,6 @@ fun DetailScreen(
     }
 }
 
-/**
- * 书籍信息区域 - 精美设计
- */
 @Composable
 private fun BookInfoSection(
     coverUrl: String,
@@ -196,16 +176,13 @@ private fun BookInfoSection(
     source: String,
     status: String,
     latestChapter: String,
-    description: String,
-    wordCount: String,
-    category: String
+    description: String
 ) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(280.dp)
+            .height(260.dp)
     ) {
-        // 背景渐变
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -219,17 +196,15 @@ private fun BookInfoSection(
                 )
         )
 
-        // 内容
         Row(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
-            // 封面图片
             Card(
                 modifier = Modifier
-                    .width(130.dp)
-                    .height(180.dp),
+                    .width(120.dp)
+                    .height(170.dp),
                 shape = RoundedCornerShape(8.dp),
                 elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
             ) {
@@ -243,13 +218,11 @@ private fun BookInfoSection(
 
             Spacer(modifier = Modifier.width(16.dp))
 
-            // 书籍信息
             Column(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
             ) {
-                // 书名
                 Text(
                     text = title,
                     style = MaterialTheme.typography.headlineSmall,
@@ -260,122 +233,39 @@ private fun BookInfoSection(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // 作者
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "作者: $author",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                SourceTag(source = source)
+
+                if (status.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = author,
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = "状态: $status",
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // 来源
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Language,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    SourceTag(source = source)
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // 分类
-                if (category.isNotEmpty()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Category,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = category,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // 字数
-                if (wordCount.isNotEmpty()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.TextFields,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = wordCount,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // 状态
-                if (status.isNotEmpty()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Info,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = status,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // 最新章节
                 if (latestChapter.isNotEmpty()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Update,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "最新: $latestChapter",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "最新: $latestChapter",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
         }
     }
 
-    // 简介
     if (description.isNotEmpty()) {
         Card(
             modifier = Modifier
@@ -383,9 +273,7 @@ private fun BookInfoSection(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             shape = RoundedCornerShape(8.dp)
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
-            ) {
+            Column(modifier = Modifier.padding(16.dp)) {
                 Text(
                     text = "简介",
                     style = MaterialTheme.typography.titleSmall,
@@ -403,9 +291,6 @@ private fun BookInfoSection(
     }
 }
 
-/**
- * 操作按钮区域
- */
 @Composable
 private fun ActionButtons(
     isOnBookshelf: Boolean,
@@ -419,7 +304,6 @@ private fun ActionButtons(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // 加入/移出书架按钮
         OutlinedButton(
             onClick = onToggleBookshelf,
             modifier = Modifier.weight(1f)
@@ -430,24 +314,22 @@ private fun ActionButtons(
                 modifier = Modifier.size(18.dp)
             )
             Spacer(modifier = Modifier.width(4.dp))
-            Text(if (isOnBookshelf) "移出书架" else "加入书架")
+            Text(if (isOnBookshelf) "移出" else "书架")
         }
 
-        // 离线缓存按钮
         OutlinedButton(
             onClick = onCache,
             modifier = Modifier.weight(1f)
         ) {
             Icon(
-                imageVector = Icons.Default.Download,
+                imageVector = Icons.Default.ArrowDropDown,
                 contentDescription = null,
                 modifier = Modifier.size(18.dp)
             )
             Spacer(modifier = Modifier.width(4.dp))
-            Text("离线缓存")
+            Text("缓存")
         }
 
-        // 开始阅读按钮
         Button(
             onClick = onStartReading,
             modifier = Modifier.weight(1f)
@@ -458,14 +340,11 @@ private fun ActionButtons(
                 modifier = Modifier.size(18.dp)
             )
             Spacer(modifier = Modifier.width(4.dp))
-            Text("开始阅读")
+            Text("阅读")
         }
     }
 }
 
-/**
- * 缓存进度
- */
 @Composable
 private fun CachingProgress(progress: Int, total: Int) {
     Card(
@@ -474,18 +353,13 @@ private fun CachingProgress(progress: Int, total: Int) {
             .padding(horizontal = 16.dp, vertical = 8.dp),
         shape = RoundedCornerShape(8.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
+        Column(modifier = Modifier.padding(16.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "正在缓存...",
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                Text(text = "正在缓存...", style = MaterialTheme.typography.bodyMedium)
                 Text(
                     text = "$progress/$total",
                     style = MaterialTheme.typography.bodySmall,
@@ -494,16 +368,13 @@ private fun CachingProgress(progress: Int, total: Int) {
             }
             Spacer(modifier = Modifier.height(8.dp))
             LinearProgressIndicator(
-                progress = if (total > 0) progress.toFloat() / total else 0f,
+                progress = { if (total > 0) progress.toFloat() / total else 0f },
                 modifier = Modifier.fillMaxWidth()
             )
         }
     }
 }
 
-/**
- * 章节目录标题
- */
 @Composable
 private fun ChapterListHeader(
     chapterCount: Int,
@@ -516,8 +387,7 @@ private fun ChapterListHeader(
             .clickable(onClick = onToggle)
     ) {
         Row(
-            modifier = Modifier
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
@@ -533,19 +403,14 @@ private fun ChapterListHeader(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Icon(
-                imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                 contentDescription = null
             )
         }
     }
-    HorizontalDivider(
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-    )
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 }
 
-/**
- * 章节列表项
- */
 @Composable
 private fun ChapterItem(
     chapterTitle: String,
@@ -559,19 +424,15 @@ private fun ChapterItem(
             .clickable(onClick = onClick)
     ) {
         Row(
-            modifier = Modifier
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 章节序号
             Text(
                 text = "${chapterIndex + 1}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.width(40.dp)
             )
-
-            // 章节标题
             Text(
                 text = chapterTitle,
                 style = MaterialTheme.typography.bodyMedium,
@@ -579,11 +440,9 @@ private fun ChapterItem(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
-
-            // 缓存状态
             if (isCached) {
                 Icon(
-                    imageVector = Icons.Default.CloudDone,
+                    imageVector = Icons.Default.Check,
                     contentDescription = "已缓存",
                     modifier = Modifier.size(16.dp),
                     tint = MaterialTheme.colorScheme.primary
