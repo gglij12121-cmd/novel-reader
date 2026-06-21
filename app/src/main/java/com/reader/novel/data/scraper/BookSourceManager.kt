@@ -128,6 +128,7 @@ class BookSourceManager {
 
             com.reader.novel.ui.components.LogManager.addLog("页面标题: ${doc.title()}")
             com.reader.novel.ui.components.LogManager.addLog("搜索列表规则: ${source.searchList}")
+            com.reader.novel.ui.components.LogManager.addLog("页面HTML长度: ${doc.html().length}")
 
             val books = mutableListOf<Book>()
 
@@ -162,8 +163,10 @@ class BookSourceManager {
                 }
             }
 
+            com.reader.novel.ui.components.LogManager.addLog("搜索完成，找到 ${books.size} 本书")
             SearchResult(books = books, source = source.name, isSuccess = true)
         } catch (e: Exception) {
+            com.reader.novel.ui.components.LogManager.addLog("${source.name}异常: ${e.message}")
             SearchResult(
                 source = source.name,
                 isSuccess = false,
@@ -191,8 +194,11 @@ class BookSourceManager {
         url = url.replace("searchKey", encodedKeyword)
         url = url.replace("searchPage", "1")
 
-        // 处理 @ 分隔符（替换为 &）
-        url = url.replace("@", "&")
+        // 处理 @ 分隔符（第一个替换为 ?，后面的替换为 &）
+        if (url.contains("@")) {
+            val parts = url.split("@")
+            url = parts[0] + "?" + parts.drop(1).joinToString("&")
+        }
 
         // 处理多个参数用 | 分隔的情况
         if (url.contains("|")) {
