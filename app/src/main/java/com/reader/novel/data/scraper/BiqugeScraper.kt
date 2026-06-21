@@ -19,75 +19,50 @@ class BiqugeScraper : BaseScraper() {
     override val sourceId: String = Constants.SOURCE_BIQUGE
 
     /**
-     * 搜索小说
+     * 搜索小说 - 支持模糊搜索
      */
     override suspend fun search(keyword: String): SearchResult {
         return try {
-            val url = "${Constants.BIQUGE_SEARCH_URL}?keyword=${java.net.URLEncoder.encode(keyword, "UTF-8")}"
-            val doc = fetchDocument(url)
+            // 尝试多种搜索方式
+            val results = mutableListOf<Book>()
 
-            val books = doc.select("div.result-item, li, div.book-item").mapNotNull { element ->
+            // 方式1：直接搜索
+            val url1 = "${Constants.BIQUGE_SEARCH_URL}?keyword=${java.net.URLEncoder.encode(keyword, "UTF-8")}"
+            try {
+                val doc1 = fetchDocument(url1)
+                val books1 = parseSearchResults(doc1)
+                results.addAll(books1)
+            } catch (e: Exception) {
+                // 忽略错误，尝试下一种方式
+            }
+
+            // 方式2：如果结果太少，尝试搜索部分关键词
+            if (results.size < 3 && keyword.length > 2) {
+                val shortKeyword = keyword.substring(0, keyword.length / 2)
+                val url2 = "${Constants.BIQUGE_SEARCH_URL}?keyword=${java.net.URLEncoder.encode(shortKeyword, "UTF-8")}"
                 try {
-                    val titleElement = element.selectFirst("a[href*=book], h3 a, .book-name a, a[title]") ?: return@mapNotNull null
-                    val title = titleElement.text().trim().ifEmpty { titleElement.attr("title") }
-                    val detailUrl = titleElement.attr("href")
-
-                    if (title.isEmpty()) return@mapNotNull null
-
-                    // 补全URL
-                    val fullUrl = if (detailUrl.startsWith("http")) {
-                        detailUrl
-                    } else if (detailUrl.startsWith("/")) {
-                        "${Constants.BIQUGE_BASE_URL}$detailUrl"
-                    } else {
-                        "${Constants.BIQUGE_BASE_URL}/$detailUrl"
-                    }
-
-                    val coverUrl = element.selectFirst("img")?.attr("src") ?: ""
-                    val author = element.selectFirst(".author, .book-author, span.s4")?.text()?.trim() ?: ""
-                    val description = element.selectFirst(".intro, .book-desc, .description")?.text()?.trim() ?: ""
-                    val latestChapter = element.selectFirst(".latest, .new-chapter, span.s6")?.text()?.trim() ?: ""
-
-                    Book(
-                        title = title,
-                        author = author,
-                        coverUrl = coverUrl,
-                        description = description,
-                        source = sourceId,
-                        sourceUrl = fullUrl,
-                        latestChapter = latestChapter
-                    )
+                    val doc2 = fetchDocument(url2)
+                    val books2 = parseSearchResults(doc2)
+                        .filter { book -> book.title.contains(keyword) || book.author.contains(keyword) }
+                    results.addAll(books2)
                 } catch (e: Exception) {
-                    null
+                    // 忽略错误
                 }
             }
 
-            if (books.isEmpty()) {
-                // 尝试另一种选择器
-                val altBooks = doc.select("table tr, div.list-item").mapNotNull { element ->
-                    try {
-                        val link = element.selectFirst("a") ?: return@mapNotNull null
-                        val title = link.text().trim()
-                        val href = link.attr("href")
+            // 去重
+            val uniqueBooks = results.distinctBy { it.title + it.author }
 
-                        if (title.isEmpty() || title == "书名") return@mapNotNull null
-
-                        val fullUrl = if (href.startsWith("http")) href else "${Constants.BIQUGE_BASE_URL}$href"
-
-                        Book(
-                            title = title,
-                            author = element.select("td, span").getOrNull(1)?.text()?.trim() ?: "",
-                            source = sourceId,
-                            sourceUrl = fullUrl
-                        )
-                    } catch (e: Exception) {
-                        null
-                    }
-                }
-                return SearchResult(books = altBooks, source = sourceId, isSuccess = true)
+            if (uniqueBooks.isEmpty()) {
+                SearchResult(
+                    books = emptyList(),
+                    source = sourceId,
+                    isSuccess = false,
+                    errorMessage = "未找到相关小说，请尝试其他关键词"
+                )
+            } else {
+                SearchResult(books = uniqueBooks, source = sourceId, isSuccess = true)
             }
-
-            SearchResult(books = books, source = sourceId, isSuccess = true)
         } catch (e: Exception) {
             SearchResult(
                 books = emptyList(),
@@ -99,18 +74,83 @@ class BiqugeScraper : BaseScraper() {
     }
 
     /**
+     * 解析搜索结果
+     */
+    private fun parseSearchResults(doc: org.jsoup.nodes.Document): List<Book> {
+        val books = mutableListOf<Book>()
+
+        // 尝试多种选择器
+        val selectors = listOf(
+            "div.result-item",
+            "li",
+            "div.book-item",
+            "table tr",
+            "div.search-item",
+            "ul li",
+            "div.list-item"
+        )
+
+        for (selector in selectors) {
+            val elements = doc.select(selector)
+            for (element in elements) {
+                try {
+                    val link = element.selectFirst("a[href]") ?: continue
+                    val title = link.text().trim().ifEmpty { link.attr("title") }
+                    val href = link.attr("href")
+
+                    // 过滤无效结果
+                    if (title.isEmpty() || title.length < 2 || title == "书名" || title == "首页") continue
+                    if (href.isEmpty() || href == "#" || href == "/") continue
+
+                    val fullUrl = when {
+                        href.startsWith("http") -> href
+                        href.startsWith("//") -> "https:$href"
+                        href.startsWith("/") -> "${Constants.BIQUGE_BASE_URL}$href"
+                        else -> "${Constants.BIQUGE_BASE_URL}/$href"
+                    }
+
+                    val author = element.selectFirst(".author, .book-author, span.s4, .writer")?.text()?.trim() ?: ""
+                    val description = element.selectFirst(".intro, .book-desc, .description, .summary")?.text()?.trim() ?: ""
+                    val latestChapter = element.selectFirst(".latest, .new-chapter, span.s6, .update")?.text()?.trim() ?: ""
+                    val coverUrl = element.selectFirst("img")?.attr("src") ?: ""
+
+                    books.add(
+                        Book(
+                            title = title,
+                            author = author,
+                            coverUrl = coverUrl,
+                            description = description,
+                            source = sourceId,
+                            sourceUrl = fullUrl,
+                            latestChapter = latestChapter
+                        )
+                    )
+                } catch (e: Exception) {
+                    // 跳过解析失败的元素
+                    continue
+                }
+            }
+
+            // 如果找到了结果，就不再尝试其他选择器
+            if (books.isNotEmpty()) break
+        }
+
+        return books
+    }
+
+    /**
      * 获取小说详情和章节列表
      */
     override suspend fun getBookDetail(bookUrl: String): Pair<Book, List<Chapter>> {
         val doc = fetchDocument(bookUrl)
 
         // 解析书籍信息
-        val title = doc.selectFirst("h1, #info h1, .book-title")?.text()?.trim() ?: ""
-        val author = doc.selectFirst("#info p, .book-author, .author")?.text()
+        val title = doc.selectFirst("h1, #info h1, .book-title, .book-name, .title")?.text()?.trim() ?: ""
+        val author = doc.selectFirst("#info p, .book-author, .author, .writer")?.text()
             ?.replace("作者：", "")?.replace("作者:", "")?.trim() ?: ""
-        val description = doc.selectFirst("#intro, .book-desc, .intro")?.text()?.trim() ?: ""
-        val coverUrl = doc.selectFirst("#fmimg img, .book-img img, .cover img")?.attr("src") ?: ""
-        val latestChapter = doc.select("#info p").lastOrNull()?.text()
+        val description = doc.selectFirst("#intro, .book-desc, .intro, .description, .summary")?.text()?.trim() ?: ""
+        val coverUrl = doc.selectFirst("#fmimg img, .book-img img, .cover img, .bookcover img")?.attr("src") ?: ""
+        val latestChapter = doc.select("#info p, .info p").lastOrNull()?.text()
             ?.replace("最新章节：", "")?.replace("最新章节:", "")?.trim() ?: ""
 
         val book = Book(
@@ -125,28 +165,40 @@ class BiqugeScraper : BaseScraper() {
 
         // 解析章节列表
         val chapters = mutableListOf<Chapter>()
-        val chapterElements = doc.select("#list dl dd a, .book-list a, .chapter-list a, a[href*=chapter]")
+        val chapterSelectors = listOf(
+            "#list dl dd a",
+            ".book-list a",
+            ".chapter-list a",
+            "a[href*=chapter]",
+            "a[href*=.html]",
+            ".list-chapter a"
+        )
 
-        chapterElements.forEachIndexed { index, element ->
-            val chapterTitle = element.text().trim()
-            val chapterUrl = element.attr("href")
+        for (selector in chapterSelectors) {
+            val chapterElements = doc.select(selector)
+            if (chapterElements.isNotEmpty()) {
+                chapterElements.forEachIndexed { index, element ->
+                    val chapterTitle = element.text().trim()
+                    val chapterUrl = element.attr("href")
 
-            if (chapterTitle.isNotEmpty()) {
-                val fullUrl = if (chapterUrl.startsWith("http")) {
-                    chapterUrl
-                } else if (chapterUrl.startsWith("/")) {
-                    "${Constants.BIQUGE_BASE_URL}$chapterUrl"
-                } else {
-                    "${Constants.BIQUGE_BASE_URL}/$chapterUrl"
+                    if (chapterTitle.isNotEmpty()) {
+                        val fullUrl = when {
+                            chapterUrl.startsWith("http") -> chapterUrl
+                            chapterUrl.startsWith("//") -> "https:$chapterUrl"
+                            chapterUrl.startsWith("/") -> "${Constants.BIQUGE_BASE_URL}$chapterUrl"
+                            else -> "${Constants.BIQUGE_BASE_URL}/$chapterUrl"
+                        }
+
+                        chapters.add(
+                            Chapter(
+                                title = chapterTitle,
+                                url = fullUrl,
+                                chapterIndex = index
+                            )
+                        )
+                    }
                 }
-
-                chapters.add(
-                    Chapter(
-                        title = chapterTitle,
-                        url = fullUrl,
-                        chapterIndex = index
-                    )
-                )
+                break
             }
         }
 
@@ -159,13 +211,29 @@ class BiqugeScraper : BaseScraper() {
     override suspend fun getChapterContent(chapterUrl: String): String {
         val doc = fetchDocument(chapterUrl)
 
-        // 获取正文内容
-        val contentElement = doc.selectFirst("#content, .content, .chapter-content, #booktext, #chaptercontent") ?: return ""
+        // 尝试多种选择器
+        val contentSelectors = listOf(
+            "#content",
+            ".content",
+            ".chapter-content",
+            "#booktext",
+            "#chaptercontent",
+            ".text-content",
+            ".read-content",
+            "article"
+        )
 
-        // 获取HTML内容并清理
-        val rawContent = contentElement.html()
+        for (selector in contentSelectors) {
+            val contentElement = doc.selectFirst(selector)
+            if (contentElement != null) {
+                val rawContent = contentElement.html()
+                val cleaned = cleanContent(rawContent)
+                if (cleaned.isNotEmpty()) {
+                    return cleaned
+                }
+            }
+        }
 
-        // 清理广告和无用内容
-        return cleanContent(rawContent)
+        return "章节内容加载失败"
     }
 }
