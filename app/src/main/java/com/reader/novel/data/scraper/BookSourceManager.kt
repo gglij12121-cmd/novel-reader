@@ -7,19 +7,19 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import org.jsoup.Jsoup
+import org.jsoup.nodes.Element
 
 /**
  * 书源管理器
  * 支持从"阅读"APP的书源配置文件导入书源
  *
- * 书源格式说明：
- * - bookSourceUrl: 网站地址
- * - ruleSearchUrl: 搜索URL，searchKey会被替换为搜索关键词
- * - ruleSearchList: 搜索结果列表选择器
- * - ruleSearchName: 书名选择器
- * - ruleSearchAuthor: 作者选择器
- * - ruleChapterList: 章节列表选择器
- * - ruleBookContent: 正文内容选择器
+ * 规则格式说明（阅读APP格式）：
+ * - 使用 @ 分隔层级选择器
+ * - 使用 . 指定class或tag
+ * - 使用 # 指定id
+ * - 使用 ! 过滤索引
+ * - 使用 | 分隔多个选择器
+ * - 使用 : 指定属性
  */
 class BookSourceManager {
 
@@ -28,8 +28,6 @@ class BookSourceManager {
 
     /**
      * 从JSON字符串加载书源
-     *
-     * @param json 书源JSON字符串
      */
     fun loadFromJson(json: String) {
         try {
@@ -88,10 +86,6 @@ class BookSourceManager {
 
     /**
      * 多源搜索
-     *
-     * @param keyword 搜索关键词
-     * @param maxSources 最大并行搜索源数量
-     * @return 搜索结果列表
      */
     suspend fun searchAll(keyword: String, maxSources: Int = 5): List<SearchResult> = coroutineScope {
         val sourcesToSearch = bookSources.filter { it.enable }.take(maxSources)
@@ -116,35 +110,34 @@ class BookSourceManager {
      */
     private suspend fun searchFromSource(source: BookSource, keyword: String): SearchResult {
         return try {
-            val searchUrl = source.searchUrl
-                .replace("searchKey", java.net.URLEncoder.encode(keyword, "UTF-8"))
-                .replace("searchPage", "1")
-                .replace("@", "&")
-                .replace("|char=gbk", "")
+            // 构建搜索URL
+            val searchUrl = buildSearchUrl(source, keyword)
+
+            val userAgent = source.userAgent.ifEmpty {
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+            }
 
             val doc = Jsoup.connect(searchUrl)
-                .userAgent(source.userAgent.ifEmpty { "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" })
-                .timeout(10000)
+                .userAgent(userAgent)
+                .timeout(15000)
+                .ignoreContentType(true)
+                .followRedirects(true)
                 .get()
 
             val books = mutableListOf<Book>()
 
-            // 解析搜索结果
-            val elements = doc.select(source.searchList)
-            for (element in elements) {
+            // 解析搜索结果列表
+            val listElements = parseRule(doc, source.searchList)
+
+            for (element in listElements) {
                 try {
-                    val name = parseSelector(element, source.searchName)
-                    val author = parseSelector(element, source.searchAuthor)
-                    val noteUrl = parseSelector(element, source.searchNoteUrl)
-                    val coverUrl = parseSelector(element, source.searchCoverUrl)
+                    val name = parseRuleForText(element, source.searchName)
+                    val author = parseRuleForText(element, source.searchAuthor)
+                    val noteUrl = parseRuleForAttr(element, source.searchNoteUrl, "href")
+                    val coverUrl = parseRuleForAttr(element, source.searchCoverUrl, "src")
 
                     if (name.isNotEmpty() && noteUrl.isNotEmpty()) {
-                        val fullUrl = when {
-                            noteUrl.startsWith("http") -> noteUrl
-                            noteUrl.startsWith("//") -> "https:$noteUrl"
-                            noteUrl.startsWith("/") -> "${source.url}$noteUrl"
-                            else -> "${source.url}/$noteUrl"
-                        }
+                        val fullUrl = resolveUrl(source.url, noteUrl)
 
                         books.add(
                             Book(
@@ -172,29 +165,267 @@ class BookSourceManager {
     }
 
     /**
+     * 构建搜索URL
+     */
+    private fun buildSearchUrl(source: BookSource, keyword: String): String {
+        var url = source.searchUrl
+
+        // 处理编码
+        val hasGbk = url.contains("|char=gbk")
+        url = url.replace("|char=gbk", "")
+
+        val encodedKeyword = if (hasGbk) {
+            java.net.URLEncoder.encode(keyword, "GBK")
+        } else {
+            java.net.URLEncoder.encode(keyword, "UTF-8")
+        }
+
+        url = url.replace("searchKey", encodedKeyword)
+        url = url.replace("searchPage", "1")
+
+        // 处理 @ 分隔符（替换为 &）
+        url = url.replace("@", "&")
+
+        // 处理多个参数用 | 分隔的情况
+        if (url.contains("|")) {
+            url = url.split("|")[0]
+        }
+
+        return url
+    }
+
+    /**
+     * 解析规则获取元素列表
+     * 支持阅读APP的规则格式：
+     * - id.xxx - 通过id获取
+     * - class.xxx - 通过class获取
+     * - tag.xxx - 通过tag获取
+     * - @ - 分隔层级
+     * - ! - 过滤索引
+     */
+    private fun parseRule(element: Element, rule: String): List<Element> {
+        if (rule.isEmpty()) return emptyList()
+
+        try {
+            // 处理 | 分隔的多个选择器
+            if (rule.contains("|")) {
+                val rules = rule.split("|")
+                for (r in rules) {
+                    val result = parseSingleRule(element, r.trim())
+                    if (result.isNotEmpty()) return result
+                }
+                return emptyList()
+            }
+
+            return parseSingleRule(element, rule)
+        } catch (e: Exception) {
+            return emptyList()
+        }
+    }
+
+    /**
+     * 解析单个规则
+     */
+    private fun parseSingleRule(element: Element, rule: String): List<Element> {
+        if (rule.isEmpty()) return emptyList()
+
+        try {
+            // 分割层级
+            val parts = rule.split("@")
+            var currentElements = listOf(element)
+
+            for (part in parts) {
+                if (part.isEmpty()) continue
+
+                val nextElements = mutableListOf<Element>()
+
+                for (elem in currentElements) {
+                    val found = parsePart(elem, part)
+                    nextElements.addAll(found)
+                }
+
+                currentElements = nextElements
+
+                if (currentElements.isEmpty()) break
+            }
+
+            return currentElements
+        } catch (e: Exception) {
+            return emptyList()
+        }
+    }
+
+    /**
+     * 解析规则的每个部分
+     * 支持格式：
+     * - id.xxx
+     * - class.xxx
+     * - tag.xxx
+     * - tag.class
+     * - !0:1:2 (过滤索引)
+     */
+    private fun parsePart(element: Element, part: String): List<Element> {
+        if (part.isEmpty()) return listOf(element)
+
+        try {
+            // 处理索引过滤 !0:1:2
+            if (part.startsWith("!")) {
+                val indices = part.removePrefix("!")
+                    .split(":")
+                    .mapNotNull { it.toIntOrNull() }
+                return indices.mapNotNull { index ->
+                    element.children().getOrNull(index)
+                }
+            }
+
+            // 处理 id.xxx
+            if (part.startsWith("id.")) {
+                val id = part.removePrefix("id.")
+                val found = element.getElementById(id)
+                return if (found != null) listOf(found) else emptyList()
+            }
+
+            // 处理 class.xxx
+            if (part.startsWith("class.")) {
+                val className = part.removePrefix("class.")
+                // 处理索引 class.xxx.0
+                val parts = className.split(".")
+                val cls = parts[0]
+                val index = if (parts.size > 1) parts[1].toIntOrNull() else null
+
+                val elements = element.getElementsByClass(cls)
+                return if (index != null) {
+                    listOfNotNull(elements.getOrNull(index))
+                } else {
+                    elements.toList()
+                }
+            }
+
+            // 处理 tag.xxx
+            if (part.startsWith("tag.")) {
+                val tag = part.removePrefix("tag.")
+                // 处理 tag.a, tag.dd!0:1:2 等
+                if (tag.contains("!")) {
+                    val tagParts = tag.split("!")
+                    val tagName = tagParts[0]
+                    val indices = tagParts[1].split(":").mapNotNull { it.toIntOrNull() }
+                    val elements = element.getElementsByTag(tagName)
+                    return indices.mapNotNull { elements.getOrNull(it) }
+                }
+                // 处理 tag.span.3
+                val tagParts = tag.split(".")
+                val tagName = tagParts[0]
+                val index = if (tagParts.size > 1) tagParts[1].toIntOrNull() else null
+                val elements = element.getElementsByTag(tagName)
+                return if (index != null) {
+                    listOfNotNull(elements.getOrNull(index))
+                } else {
+                    elements.toList()
+                }
+            }
+
+            // 处理 $id.xxx@class.xxx 等复合选择器
+            if (part.startsWith("$")) {
+                val subPart = part.removePrefix("$")
+                return parsePart(element, subPart)
+            }
+
+            // 默认当作CSS选择器
+            val found = element.select(part)
+            return if (found.isNotEmpty()) found.toList() else emptyList()
+        } catch (e: Exception) {
+            return emptyList()
+        }
+    }
+
+    /**
+     * 解析规则获取文本
+     */
+    private fun parseRuleForText(element: Element, rule: String): String {
+        if (rule.isEmpty()) return ""
+
+        try {
+            // 处理 # 分隔的内容替换
+            val parts = rule.split("#")
+            val selector = parts[0]
+            val regex = if (parts.size > 1) parts[1] else null
+
+            val elements = parseRule(element, selector)
+            if (elements.isEmpty()) return ""
+
+            val text = elements.first().text().trim()
+
+            // 应用正则替换
+            if (regex != null) {
+                return text.replace(Regex(regex), "").trim()
+            }
+
+            return text
+        } catch (e: Exception) {
+            return ""
+        }
+    }
+
+    /**
+     * 解析规则获取属性
+     */
+    private fun parseRuleForAttr(element: Element, rule: String, defaultAttr: String): String {
+        if (rule.isEmpty()) return ""
+
+        try {
+            // 处理属性指定 :attr
+            val parts = rule.split(":")
+            val selector = parts[0]
+            val attr = if (parts.size > 1) parts[1] else defaultAttr
+
+            val elements = parseRule(element, selector)
+            if (elements.isEmpty()) return ""
+
+            return when (attr) {
+                "text" -> elements.first().text().trim()
+                "html" -> elements.first().html().trim()
+                else -> elements.first().attr(attr).trim()
+            }
+        } catch (e: Exception) {
+            return ""
+        }
+    }
+
+    /**
+     * 解析URL
+     */
+    private fun resolveUrl(baseUrl: String, url: String): String {
+        return when {
+            url.startsWith("http") -> url
+            url.startsWith("//") -> "https:$url"
+            url.startsWith("/") -> "$baseUrl$url"
+            else -> "$baseUrl/$url"
+        }
+    }
+
+    /**
      * 获取章节列表
      */
     suspend fun getChapterList(source: BookSource, bookUrl: String): List<Chapter> {
         return try {
+            val userAgent = source.userAgent.ifEmpty {
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+
             val doc = Jsoup.connect(bookUrl)
-                .userAgent(source.userAgent.ifEmpty { "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" })
-                .timeout(10000)
+                .userAgent(userAgent)
+                .timeout(15000)
                 .get()
 
             val chapters = mutableListOf<Chapter>()
-            val elements = doc.select(source.chapterList)
+            val elements = parseRule(doc, source.chapterList)
 
             elements.forEachIndexed { index, element ->
-                val name = parseSelector(element, source.chapterName)
-                val url = parseSelector(element, source.contentUrl)
+                val name = parseRuleForText(element, source.chapterName)
+                val url = parseRuleForAttr(element, source.contentUrl, "href")
 
                 if (name.isNotEmpty() && url.isNotEmpty()) {
-                    val fullUrl = when {
-                        url.startsWith("http") -> url
-                        url.startsWith("//") -> "https:$url"
-                        url.startsWith("/") -> "${source.url}$url"
-                        else -> "${source.url}/$url"
-                    }
+                    val fullUrl = resolveUrl(source.url, url)
 
                     chapters.add(
                         Chapter(
@@ -217,50 +448,42 @@ class BookSourceManager {
      */
     suspend fun getChapterContent(source: BookSource, chapterUrl: String): String {
         return try {
+            val userAgent = source.userAgent.ifEmpty {
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+
             val doc = Jsoup.connect(chapterUrl)
-                .userAgent(source.userAgent.ifEmpty { "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" })
-                .timeout(10000)
+                .userAgent(userAgent)
+                .timeout(15000)
                 .get()
 
-            val contentElement = doc.selectFirst(source.bookContent)
-            contentElement?.text() ?: "内容加载失败"
+            // 解析内容规则
+            val contentRule = source.bookContent
+            if (contentRule.isEmpty()) return "内容加载失败"
+
+            // 处理 $id.content@html 格式
+            val elements = parseRule(doc, contentRule)
+            if (elements.isEmpty()) return "内容加载失败"
+
+            val content = elements.first()
+
+            // 获取文本内容
+            val text = content.html()
+                .replace("<br>", "\n")
+                .replace("<br/>", "\n")
+                .replace("<p>", "\n")
+                .replace("</p>", "")
+                .replace(Regex("<[^>]+>"), "")
+                .replace(Regex("\n{3,}"), "\n\n")
+                .trim()
+
+            // 清理广告
+            text.replace(Regex("天才一秒记住.*?m\\..*?\\.com"), "")
+                .replace(Regex("手机用户请浏览.*?阅读"), "")
+                .replace(Regex("请记住本书首发域名.*?。"), "")
+                .trim()
         } catch (e: Exception) {
             "内容加载失败: ${e.message}"
-        }
-    }
-
-    /**
-     * 解析选择器
-     * 支持简单的选择器语法：tag.class@attr
-     */
-    private fun parseSelector(element: org.jsoup.nodes.Element, selector: String): String {
-        if (selector.isEmpty()) return ""
-
-        return try {
-            // 简单选择器实现
-            val parts = selector.split("@")
-            val cssSelector = parts[0]
-            val attr = if (parts.size > 1) parts[1] else "text"
-
-            val targetElement = if (cssSelector.contains(".")) {
-                element.selectFirst(cssSelector)
-            } else if (cssSelector.startsWith("id.")) {
-                element.getElementById(cssSelector.removePrefix("id."))
-            } else if (cssSelector.startsWith("class.")) {
-                element.getElementsByClass(cssSelector.removePrefix("class.")).firstOrNull()
-            } else {
-                element.selectFirst(cssSelector)
-            }
-
-            when (attr) {
-                "text" -> targetElement?.text()?.trim() ?: ""
-                "html" -> targetElement?.html()?.trim() ?: ""
-                "href" -> targetElement?.attr("href")?.trim() ?: ""
-                "src" -> targetElement?.attr("src")?.trim() ?: ""
-                else -> targetElement?.attr(attr)?.trim() ?: ""
-            }
-        } catch (e: Exception) {
-            ""
         }
     }
 }
