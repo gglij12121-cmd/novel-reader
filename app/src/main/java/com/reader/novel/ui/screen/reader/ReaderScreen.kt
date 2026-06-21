@@ -19,6 +19,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.reader.novel.ui.components.ErrorView
 import com.reader.novel.ui.components.LoadingIndicator
 import com.reader.novel.ui.theme.ReaderColors
+import com.reader.novel.ui.screen.reader.components.ChapterListDrawer
+import com.reader.novel.ui.screen.reader.components.ReaderSettingsPanel
 
 /**
  * 阅读器页面

@@ -3,6 +3,8 @@ package com.reader.novel.ui.screen.search
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
@@ -10,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.reader.novel.ui.components.BookCard
@@ -68,10 +71,10 @@ fun SearchScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                keyboardOptions = androidx.compose.ui.text.input.KeyboardOptions(
-                    imeAction = androidx.compose.ui.text.input.ImeAction.Search
+                keyboardOptions = KeyboardOptions(
+                    imeAction = ImeAction.Search
                 ),
-                keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                keyboardActions = KeyboardActions(
                     onSearch = { viewModel.search(searchQuery) }
                 )
             )
@@ -87,7 +90,7 @@ fun SearchScreen(
                         onRetry = { viewModel.search(searchQuery) }
                     )
                 }
-                uiState.books.isNotEmpty -> {
+                uiState.books.isNotEmpty() -> {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(16.dp),
