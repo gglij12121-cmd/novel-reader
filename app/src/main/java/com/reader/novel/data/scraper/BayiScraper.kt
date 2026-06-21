@@ -59,7 +59,7 @@ class BayiScraper : BaseScraper() {
                     val container = dt.parent() ?: continue
                     val dds = container.select("dd")
 
-                    val titleLink = dds.selectFirst("h3 a") ?: continue
+                    val titleLink = dds.select("h3 a").first() ?: continue
                     val title = titleLink.text().trim()
                     val href = titleLink.attr("href")
 
@@ -69,8 +69,8 @@ class BayiScraper : BaseScraper() {
                         else if (href.startsWith("/")) "${Constants.BAYI_BASE_URL}$href"
                         else "${Constants.BAYI_BASE_URL}/$href"
 
-                    val author = dds.selectFirst("dd.book_other span")?.text()?.trim() ?: ""
-                    val latestChapter = dds.select("dd.book_other").lastOrNull()?.selectFirst("a")?.text()?.trim() ?: ""
+                    val author = dds.select("dd.book_other span").first()?.text()?.trim() ?: ""
+                    val latestChapter = dds.select("dd.book_other").last()?.selectFirst("a")?.text()?.trim() ?: ""
 
                     books.add(Book(
                         title = title, author = author, description = "",

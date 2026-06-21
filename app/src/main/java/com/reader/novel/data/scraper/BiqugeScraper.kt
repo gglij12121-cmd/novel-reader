@@ -64,7 +64,7 @@ class BiqugeScraper : BaseScraper() {
                     val dds = container.select("dd")
 
                     // 书名在 dd > h3 > a
-                    val titleLink = dds.selectFirst("h3 a") ?: continue
+                    val titleLink = dds.select("h3 a").first() ?: continue
                     val title = titleLink.text().trim()
                     val href = titleLink.attr("href")
 
@@ -75,9 +75,9 @@ class BiqugeScraper : BaseScraper() {
                         else "${Constants.BIQUGE_BASE_URL}/$href"
 
                     // 作者在 dd.book_other span
-                    val author = dds.selectFirst("dd.book_other span")?.text()?.trim() ?: ""
+                    val author = dds.select("dd.book_other span").first()?.text()?.trim() ?: ""
                     // 最新章节在最后一个 dd.book_other a
-                    val latestChapter = dds.select("dd.book_other").lastOrNull()?.selectFirst("a")?.text()?.trim() ?: ""
+                    val latestChapter = dds.select("dd.book_other").last()?.selectFirst("a")?.text()?.trim() ?: ""
 
                     books.add(Book(
                         title = title, author = author, description = "",
