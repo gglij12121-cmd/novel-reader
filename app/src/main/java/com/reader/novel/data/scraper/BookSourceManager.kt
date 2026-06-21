@@ -112,15 +112,14 @@ class BookSourceManager {
                 val request = Request.Builder()
                     .url(searchUrl)
                     .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
-                    .addHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+                    .addHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
                     .addHeader("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
-                    .addHeader("Accept-Encoding", "gzip, deflate")
                     .addHeader("Connection", "keep-alive")
-                    .addHeader("Referer", source.url)
                     .build()
 
                 val response = client.newCall(request).execute()
-                val html = response.body?.string() ?: ""
+                val source = response.body?.source()
+                val html = source?.readUtf8() ?: ""
                 val statusCode = response.code
                 Pair(statusCode, html)
             }
