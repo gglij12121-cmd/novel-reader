@@ -9,6 +9,9 @@ import kotlinx.coroutines.coroutineScope
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
+import java.net.Proxy
+import java.net.ProxySelector
+import java.net.URI
 import java.util.concurrent.TimeUnit
 
 /**
@@ -18,13 +21,20 @@ class BookSourceManager {
 
     private val bookSources = mutableListOf<BookSource>()
 
-    /** OkHttp客户端 - 模拟真实浏览器 */
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .followSslRedirects(true)
-        .build()
+    /** OkHttp客户端 - 使用系统代理设置 */
+    private val client = run {
+        // 获取系统代理
+        val proxyList = ProxySelector.getDefault().select(URI.create("http://www.example.com"))
+        val systemProxy = if (proxyList.isNotEmpty()) proxyList.first() else Proxy.NO_PROXY
+
+        OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .proxy(systemProxy)
+            .build()
+    }
 
     fun loadFromJson(json: String) {
         try {
