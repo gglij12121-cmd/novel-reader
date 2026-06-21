@@ -78,7 +78,17 @@ object AppModule {
      */
     @Provides
     @Singleton
-    fun provideScraperManager(): ScraperManager {
-        return ScraperManager()
+    fun provideScraperManager(@ApplicationContext context: Context): ScraperManager {
+        val scraperManager = ScraperManager()
+
+        // 从Assets加载书源配置
+        try {
+            val json = context.assets.open("book_source.json").bufferedReader().use { it.readText() }
+            scraperManager.loadBookSources(json)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        return scraperManager
     }
 }

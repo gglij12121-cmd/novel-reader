@@ -14,15 +14,28 @@ import kotlinx.coroutines.coroutineScope
  * 1. 管理所有爬虫实例
  * 2. 提供多源并行搜索
  * 3. 根据来源标识获取对应爬虫
+ * 4. 支持从"阅读"APP导入书源
  */
 class ScraperManager {
 
-    /** 所有可用的爬虫 */
+    /** 内置爬虫 */
     private val scrapers: Map<String, BaseScraper> = mapOf(
         Constants.SOURCE_BIQUGE to BiqugeScraper(),
         Constants.SOURCE_BAYI to BayiScraper(),
         Constants.SOURCE_QIDIAN to QidianScraper()
     )
+
+    /** 书源管理器 */
+    private val bookSourceManager = BookSourceManager()
+
+    /**
+     * 从Assets加载书源配置
+     *
+     * @param json 书源JSON字符串
+     */
+    fun loadBookSources(json: String) {
+        bookSourceManager.loadFromJson(json)
+    }
 
     /**
      * 获取指定来源的爬虫
@@ -38,7 +51,11 @@ class ScraperManager {
      * 获取所有可用的来源名称
      */
     fun getAvailableSources(): List<Pair<String, String>> {
-        return scrapers.map { (id, scraper) -> Pair(id, scraper.sourceName) }
+        val sources = scrapers.map { (id, scraper) -> Pair(id, scraper.sourceName) }
+        val bookSources = bookSourceManager.getAvailableSources().map { source ->
+            Pair("booksource_${source.name}", source.name)
+        }
+        return sources + bookSources
     }
 
     /**
@@ -49,7 +66,8 @@ class ScraperManager {
      * @return 所有来源的搜索结果列表
      */
     suspend fun searchAll(keyword: String): List<SearchResult> = coroutineScope {
-        scrapers.values.map { scraper ->
+        // 内置爬虫搜索
+        val builtinResults = scrapers.values.map { scraper ->
             async {
                 try {
                     scraper.search(keyword)
@@ -61,7 +79,13 @@ class ScraperManager {
                     )
                 }
             }
-        }.awaitAll()
+        }
+
+        // 书源搜索（最多并行5个）
+        val bookSourceResults = bookSourceManager.searchAll(keyword, maxSources = 5)
+
+        // 合并结果
+        (builtinResults.awaitAll() + bookSourceResults)
     }
 
     /**
@@ -72,11 +96,33 @@ class ScraperManager {
      * @return 搜索结果
      */
     suspend fun searchFrom(keyword: String, sourceId: String): SearchResult {
-        val scraper = scrapers[sourceId] ?: return SearchResult(
+        // 检查是否是内置爬虫
+        val scraper = scrapers[sourceId]
+        if (scraper != null) {
+            return scraper.search(keyword)
+        }
+
+        // 检查是否是书源
+        if (sourceId.startsWith("booksource_")) {
+            val sourceName = sourceId.removePrefix("booksource_")
+            val source = bookSourceManager.getAvailableSources().find { it.name == sourceName }
+            if (source != null) {
+                return bookSourceManager.searchAll(keyword, maxSources = 1).firstOrNull()
+                    ?: SearchResult(source = sourceId, isSuccess = false, errorMessage = "搜索失败")
+            }
+        }
+
+        return SearchResult(
             source = sourceId,
             isSuccess = false,
             errorMessage = "未知的来源: $sourceId"
         )
-        return scraper.search(keyword)
+    }
+
+    /**
+     * 获取书源管理器
+     */
+    fun getBookSourceManager(): BookSourceManager {
+        return bookSourceManager
     }
 }
