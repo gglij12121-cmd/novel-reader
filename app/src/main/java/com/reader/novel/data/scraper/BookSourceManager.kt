@@ -112,6 +112,8 @@ class BookSourceManager {
         return try {
             // 构建搜索URL
             val searchUrl = buildSearchUrl(source, keyword)
+            android.util.Log.d("BookSource", "搜索URL: $searchUrl")
+            android.util.Log.d("BookSource", "书源: ${source.name}")
 
             val userAgent = source.userAgent.ifEmpty {
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
@@ -124,10 +126,14 @@ class BookSourceManager {
                 .followRedirects(true)
                 .get()
 
+            android.util.Log.d("BookSource", "页面标题: ${doc.title()}")
+            android.util.Log.d("BookSource", "搜索列表规则: ${source.searchList}")
+
             val books = mutableListOf<Book>()
 
             // 解析搜索结果列表
             val listElements = parseRule(doc, source.searchList)
+            android.util.Log.d("BookSource", "找到元素数量: ${listElements.size}")
 
             for (element in listElements) {
                 try {
@@ -135,6 +141,8 @@ class BookSourceManager {
                     val author = parseRuleForText(element, source.searchAuthor)
                     val noteUrl = parseRuleForAttr(element, source.searchNoteUrl, "href")
                     val coverUrl = parseRuleForAttr(element, source.searchCoverUrl, "src")
+
+                    android.util.Log.d("BookSource", "书名: $name, 作者: $author, 链接: $noteUrl")
 
                     if (name.isNotEmpty() && noteUrl.isNotEmpty()) {
                         val fullUrl = resolveUrl(source.url, noteUrl)
