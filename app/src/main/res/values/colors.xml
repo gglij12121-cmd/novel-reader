@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 主题色 -->
+    <color name="primary">#FF1976D2</color>
+    <color name="primary_variant">#FF1565C0</color>
+    <color name="secondary">#FF4CAF50</color>
+    <color name="secondary_variant">#FF388E3C</color>
+
+    <!-- 背景色 -->
+    <color name="background">#FFF5F5F5</color>
+    <color name="surface">#FFFFFFFF</color>
+    <color name="error">#FFD32F2F</color>
+
+    <!-- 文字色 -->
+    <color name="on_primary">#FFFFFFFF</color>
+    <color name="on_secondary">#FFFFFFFF</color>
+    <color name="on_background">#FF212121</color>
+    <color name="on_surface">#FF212121</color>
+    <color name="on_error">#FFFFFFFF</color>
+
+    <!-- 暗黑主题色 -->
+    <color name="dark_primary">#FF90CAF9</color>
+    <color name="dark_background">#FF121212</color>
+    <color name="dark_surface">#FF1E1E1E</color>
+</resources>
