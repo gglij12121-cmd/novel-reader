@@ -23,11 +23,10 @@ class BiqugeScraper : BaseScraper() {
      */
     override suspend fun search(keyword: String): SearchResult {
         return try {
-            // 尝试多种搜索方式
             val results = mutableListOf<Book>()
 
-            // 方式1：直接搜索
-            val url1 = "${Constants.BIQUGE_SEARCH_URL}?keyword=${java.net.URLEncoder.encode(keyword, "UTF-8")}"
+            // 方式1：直接搜索 (使用 ?q= 参数)
+            val url1 = "${Constants.BIQUGE_SEARCH_URL}?q=${java.net.URLEncoder.encode(keyword, "UTF-8")}"
             try {
                 val doc1 = fetchDocument(url1)
                 val books1 = parseSearchResults(doc1)
@@ -39,7 +38,7 @@ class BiqugeScraper : BaseScraper() {
             // 方式2：如果结果太少，尝试搜索部分关键词
             if (results.size < 3 && keyword.length > 2) {
                 val shortKeyword = keyword.substring(0, keyword.length / 2)
-                val url2 = "${Constants.BIQUGE_SEARCH_URL}?keyword=${java.net.URLEncoder.encode(shortKeyword, "UTF-8")}"
+                val url2 = "${Constants.BIQUGE_SEARCH_URL}?q=${java.net.URLEncoder.encode(shortKeyword, "UTF-8")}"
                 try {
                     val doc2 = fetchDocument(url2)
                     val books2 = parseSearchResults(doc2)
@@ -75,64 +74,103 @@ class BiqugeScraper : BaseScraper() {
 
     /**
      * 解析搜索结果
+     * biquge5.com 使用 dt/dd 结构:
+     * <dt><a href="/67_67129/">链接</a></dt>
+     * <dd><h3><a href="/67_67129/">书名</a></h3></dd>
+     * <dd class="book_other">作者：<span>作者名</span></dd>
+     * <dd class="book_other">最新章节：<a href="...">章节名</a></dd>
      */
     private fun parseSearchResults(doc: org.jsoup.nodes.Document): List<Book> {
         val books = mutableListOf<Book>()
 
-        // 尝试多种选择器
-        val selectors = listOf(
-            "div.result-item",
-            "li",
-            "div.book-item",
-            "table tr",
-            "div.search-item",
-            "ul li",
-            "div.list-item"
-        )
+        // 方式1: dt/dd 结构 (biquge5.com / 81zw.cc 等新站点)
+        val dtElements = doc.select("dt")
+        for (dt in dtElements) {
+            try {
+                val link = dt.selectFirst("a[href]") ?: continue
+                val href = link.attr("href")
+                if (href.isEmpty() || href == "#" || href == "/") continue
 
-        for (selector in selectors) {
-            val elements = doc.select(selector)
-            for (element in elements) {
-                try {
-                    val link = element.selectFirst("a[href]") ?: continue
-                    val title = link.text().trim().ifEmpty { link.attr("title") }
-                    val href = link.attr("href")
+                // 获取相邻的 dd 元素
+                val ddContainer = dt.parent() ?: dt
+                val allDds = ddContainer.select("dd")
 
-                    // 过滤无效结果
-                    if (title.isEmpty() || title.length < 2 || title == "书名" || title == "首页") continue
-                    if (href.isEmpty() || href == "#" || href == "/") continue
+                // 书名: dd > h3 > a
+                val titleLink = allDds.selectFirst("h3 a")
+                val title = titleLink?.text()?.trim() ?: link.text().trim()
+                if (title.isEmpty() || title.length < 2) continue
 
-                    val fullUrl = when {
-                        href.startsWith("http") -> href
-                        href.startsWith("//") -> "https:$href"
-                        href.startsWith("/") -> "${Constants.BIQUGE_BASE_URL}$href"
-                        else -> "${Constants.BIQUGE_BASE_URL}/$href"
-                    }
+                // 作者: dd.book_other span
+                val author = allDds.selectFirst("dd.book_other span")?.text()?.trim() ?: ""
 
-                    val author = element.selectFirst(".author, .book-author, span.s4, .writer")?.text()?.trim() ?: ""
-                    val description = element.selectFirst(".intro, .book-desc, .description, .summary")?.text()?.trim() ?: ""
-                    val latestChapter = element.selectFirst(".latest, .new-chapter, span.s6, .update")?.text()?.trim() ?: ""
-                    val coverUrl = element.selectFirst("img")?.attr("src") ?: ""
+                // 最新章节
+                val latestChapter = allDds.select("dd.book_other").lastOrNull()
+                    ?.selectFirst("a")?.text()?.trim() ?: ""
 
-                    books.add(
-                        Book(
-                            title = title,
-                            author = author,
-                            coverUrl = coverUrl,
-                            description = description,
-                            source = sourceId,
-                            sourceUrl = fullUrl,
-                            latestChapter = latestChapter
-                        )
-                    )
-                } catch (e: Exception) {
-                    // 跳过解析失败的元素
-                    continue
+                val fullUrl = when {
+                    href.startsWith("http") -> href
+                    href.startsWith("//") -> "https:$href"
+                    href.startsWith("/") -> "${Constants.BIQUGE_BASE_URL}$href"
+                    else -> "${Constants.BIQUGE_BASE_URL}/$href"
                 }
-            }
 
-            // 如果找到了结果，就不再尝试其他选择器
-            if (books.isNotEmpty()) break
+                books.add(
+                    Book(
+                        title = title,
+                        author = author,
+                        coverUrl = "",
+                        description = "",
+                        source = sourceId,
+                        sourceUrl = fullUrl,
+                        latestChapter = latestChapter
+                    )
+                )
+            } catch (e: Exception) {
+                continue
+            }
+        }
+
+        // 方式2: 通用 li 选择器 (兜底)
+        if (books.isEmpty()) {
+            val selectors = listOf("li", "div.result-item", "div.book-item", "div.search-item")
+            for (selector in selectors) {
+                val elements = doc.select(selector)
+                for (element in elements) {
+                    try {
+                        val link = element.selectFirst("a[href]") ?: continue
+                        val title = link.text().trim().ifEmpty { link.attr("title") }
+                        val href = link.attr("href")
+
+                        if (title.isEmpty() || title.length < 2 || title == "书名" || title == "首页") continue
+                        if (href.isEmpty() || href == "#" || href == "/") continue
+
+                        val fullUrl = when {
+                            href.startsWith("http") -> href
+                            href.startsWith("//") -> "https:$href"
+                            href.startsWith("/") -> "${Constants.BIQUGE_BASE_URL}$href"
+                            else -> "${Constants.BIQUGE_BASE_URL}/$href"
+                        }
+
+                        val author = element.selectFirst(".author, .book-author, span.s4, .writer")?.text()?.trim() ?: ""
+                        val latestChapter = element.selectFirst(".latest, .new-chapter, span.s6, .update")?.text()?.trim() ?: ""
+
+                        books.add(
+                            Book(
+                                title = title,
+                                author = author,
+                                coverUrl = "",
+                                description = "",
+                                source = sourceId,
+                                sourceUrl = fullUrl,
+                                latestChapter = latestChapter
+                            )
+                        )
+                    } catch (e: Exception) {
+                        continue
+                    }
+                }
+                if (books.isNotEmpty()) break
+            }
         }
 
         return books

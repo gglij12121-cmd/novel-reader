@@ -25,8 +25,8 @@ class BayiScraper : BaseScraper() {
         return try {
             val results = mutableListOf<Book>()
 
-            // 方式1：直接搜索
-            val url1 = "${Constants.BAYI_SEARCH_URL}?keyword=${java.net.URLEncoder.encode(keyword, "UTF-8")}"
+            // 方式1：直接搜索 (使用 ?q= 参数)
+            val url1 = "${Constants.BAYI_SEARCH_URL}?q=${java.net.URLEncoder.encode(keyword, "UTF-8")}"
             try {
                 val doc1 = fetchDocument(url1)
                 val books1 = parseSearchResults(doc1)
@@ -38,7 +38,7 @@ class BayiScraper : BaseScraper() {
             // 方式2：如果结果太少，尝试搜索部分关键词
             if (results.size < 3 && keyword.length > 2) {
                 val shortKeyword = keyword.substring(0, keyword.length / 2)
-                val url2 = "${Constants.BAYI_SEARCH_URL}?keyword=${java.net.URLEncoder.encode(shortKeyword, "UTF-8")}"
+                val url2 = "${Constants.BAYI_SEARCH_URL}?q=${java.net.URLEncoder.encode(shortKeyword, "UTF-8")}"
                 try {
                     val doc2 = fetchDocument(url2)
                     val books2 = parseSearchResults(doc2)
@@ -73,61 +73,103 @@ class BayiScraper : BaseScraper() {
 
     /**
      * 解析搜索结果
+     * 81zw.cc 使用 dt/dd 结构:
+     * <dt><a href="/book/34889/">链接</a></dt>
+     * <dd><h3><a href="/book/34889/">书名</a></h3></dd>
+     * <dd class="book_other">作者：<span>作者名</span></dd>
+     * <dd class="book_other">最新章节：<a href="...">章节名</a></dd>
      */
     private fun parseSearchResults(doc: org.jsoup.nodes.Document): List<Book> {
         val books = mutableListOf<Book>()
 
-        val selectors = listOf(
-            "div.novelslist li",
-            "table.tb li",
-            "div.search-item",
-            "div.book-item",
-            "ul.novels-list li",
-            "li",
-            "table tr",
-            "div.list-item"
-        )
+        // 方式1: dt/dd 结构 (81zw.cc 等新站点)
+        val dtElements = doc.select("dt")
+        for (dt in dtElements) {
+            try {
+                val link = dt.selectFirst("a[href]") ?: continue
+                val href = link.attr("href")
+                if (href.isEmpty() || href == "#" || href == "/") continue
 
-        for (selector in selectors) {
-            val elements = doc.select(selector)
-            for (element in elements) {
-                try {
-                    val link = element.selectFirst("a[href]") ?: continue
-                    val title = link.text().trim().ifEmpty { link.attr("title") }
-                    val href = link.attr("href")
+                // 获取相邻的 dd 元素
+                val ddContainer = dt.parent() ?: dt
+                val allDds = ddContainer.select("dd")
 
-                    if (title.isEmpty() || title.length < 2 || title == "书名" || title == "首页") continue
-                    if (href.isEmpty() || href == "#" || href == "/") continue
+                // 书名: dd > h3 > a
+                val titleLink = allDds.selectFirst("h3 a")
+                val title = titleLink?.text()?.trim() ?: link.text().trim()
+                if (title.isEmpty() || title.length < 2) continue
 
-                    val fullUrl = when {
-                        href.startsWith("http") -> href
-                        href.startsWith("//") -> "https:$href"
-                        href.startsWith("/") -> "${Constants.BAYI_BASE_URL}$href"
-                        else -> "${Constants.BAYI_BASE_URL}/$href"
-                    }
+                // 作者: dd.book_other span
+                val author = allDds.selectFirst("dd.book_other span")?.text()?.trim() ?: ""
 
-                    val author = element.selectFirst(".author, .s4, .book-author, .writer")?.text()?.trim() ?: ""
-                    val latestChapter = element.selectFirst(".new-chapter, .s6, .latest, .update")?.text()?.trim() ?: ""
-                    val description = element.selectFirst(".intro, .book-desc, .description")?.text()?.trim() ?: ""
-                    val coverUrl = element.selectFirst("img")?.attr("src") ?: ""
+                // 最新章节
+                val latestChapter = allDds.select("dd.book_other").lastOrNull()
+                    ?.selectFirst("a")?.text()?.trim() ?: ""
 
-                    books.add(
-                        Book(
-                            title = title,
-                            author = author,
-                            coverUrl = coverUrl,
-                            description = description,
-                            source = sourceId,
-                            sourceUrl = fullUrl,
-                            latestChapter = latestChapter
-                        )
-                    )
-                } catch (e: Exception) {
-                    continue
+                val fullUrl = when {
+                    href.startsWith("http") -> href
+                    href.startsWith("//") -> "https:$href"
+                    href.startsWith("/") -> "${Constants.BAYI_BASE_URL}$href"
+                    else -> "${Constants.BAYI_BASE_URL}/$href"
                 }
-            }
 
-            if (books.isNotEmpty()) break
+                books.add(
+                    Book(
+                        title = title,
+                        author = author,
+                        coverUrl = "",
+                        description = "",
+                        source = sourceId,
+                        sourceUrl = fullUrl,
+                        latestChapter = latestChapter
+                    )
+                )
+            } catch (e: Exception) {
+                continue
+            }
+        }
+
+        // 方式2: 通用 li 选择器 (兜底)
+        if (books.isEmpty()) {
+            val selectors = listOf("li", "div.result-item", "div.book-item", "div.search-item")
+            for (selector in selectors) {
+                val elements = doc.select(selector)
+                for (element in elements) {
+                    try {
+                        val link = element.selectFirst("a[href]") ?: continue
+                        val title = link.text().trim().ifEmpty { link.attr("title") }
+                        val href = link.attr("href")
+
+                        if (title.isEmpty() || title.length < 2 || title == "书名" || title == "首页") continue
+                        if (href.isEmpty() || href == "#" || href == "/") continue
+
+                        val fullUrl = when {
+                            href.startsWith("http") -> href
+                            href.startsWith("//") -> "https:$href"
+                            href.startsWith("/") -> "${Constants.BAYI_BASE_URL}$href"
+                            else -> "${Constants.BAYI_BASE_URL}/$href"
+                        }
+
+                        val author = element.selectFirst(".author, .s4, .book-author, .writer")?.text()?.trim() ?: ""
+                        val latestChapter = element.selectFirst(".new-chapter, .s6, .latest, .update")?.text()?.trim() ?: ""
+
+                        books.add(
+                            Book(
+                                title = title,
+                                author = author,
+                                coverUrl = "",
+                                description = "",
+                                source = sourceId,
+                                sourceUrl = fullUrl,
+                                latestChapter = latestChapter
+                            )
+                        )
+                    } catch (e: Exception) {
+                        continue
+                    }
+                }
+                if (books.isNotEmpty()) break
+            }
         }
 
         return books

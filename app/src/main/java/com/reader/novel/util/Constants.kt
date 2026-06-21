@@ -14,16 +14,18 @@ object Constants {
     /**
      * 笔趣阁 - 常用镜像站
      * 特点：HTML结构简单，反爬较弱
+     * 搜索参数: ?q=keyword
      */
-    const val BIQUGE_BASE_URL = "https://www.biquge.co"
+    const val BIQUGE_BASE_URL = "https://www.biquge5.com"
     const val BIQUGE_SEARCH_URL = "$BIQUGE_BASE_URL/search.php"
     const val BIQUGE_NAME = "笔趣阁"
 
     /**
      * 八一中文网 - 常用镜像站
      * 特点：结构规整，内容丰富
+     * 搜索参数: ?q=keyword
      */
-    const val BAYI_BASE_URL = "https://www.81zw.com"
+    const val BAYI_BASE_URL = "https://www.81zw.cc"
     const val BAYI_SEARCH_URL = "$BAYI_BASE_URL/search.php"
     const val BAYI_NAME = "八一中文网"
 
