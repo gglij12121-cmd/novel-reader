@@ -3,6 +3,7 @@ package com.reader.novel.data.scraper
 import com.reader.novel.data.model.Book
 import com.reader.novel.data.model.Chapter
 import com.reader.novel.data.model.SearchResult
+import com.reader.novel.ui.components.LogManager
 import com.reader.novel.util.Constants
 
 /**
@@ -23,16 +24,20 @@ class BiqugeScraper : BaseScraper() {
      */
     override suspend fun search(keyword: String): SearchResult {
         return try {
+            LogManager.addLog("[$sourceName] 开始搜索: $keyword")
             val results = mutableListOf<Book>()
 
             // 方式1：直接搜索 (使用 ?q= 参数)
             val url1 = "${Constants.BIQUGE_SEARCH_URL}?q=${java.net.URLEncoder.encode(keyword, "UTF-8")}"
             try {
+                LogManager.addLog("[$sourceName] URL: $url1")
                 val doc1 = fetchDocument(url1)
+                LogManager.addLog("[$sourceName] 页面标题: ${doc1.title()}, 长度: ${doc1.html().length}")
                 val books1 = parseSearchResults(doc1)
+                LogManager.addLog("[$sourceName] 找到书籍: ${books1.size}")
                 results.addAll(books1)
             } catch (e: Exception) {
-                // 忽略错误，尝试下一种方式
+                LogManager.addLog("[$sourceName] 异常: ${e.javaClass.simpleName}: ${e.message}")
             }
 
             // 方式2：如果结果太少，尝试搜索部分关键词
