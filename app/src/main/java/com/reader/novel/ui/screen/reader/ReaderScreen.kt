@@ -1,7 +1,10 @@
 package com.reader.novel.ui.screen.reader
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -13,6 +16,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.*
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -24,9 +30,17 @@ import com.reader.novel.ui.theme.ReaderColors
 import com.reader.novel.ui.screen.reader.components.ChapterListDrawer
 import com.reader.novel.ui.screen.reader.components.ReaderSettingsPanel
 import com.reader.novel.ui.screen.reader.components.presetFonts
+import kotlin.math.abs
 
 /**
  * 阅读器页面
+ *
+ * 支持三种翻页模式：
+ * - 上下滚动 (SCROLL)
+ * - 左右滑动 (SLIDE)
+ * - 仿真翻页 (SIMULATION)
+ *
+ * 支持音量键翻页
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,10 +65,26 @@ fun ReaderScreen(
     val textColor = if (readerSettings.bgColorIndex >= 5) Color.White else Color.Black
     val fontFamily = presetFonts.getOrElse(readerSettings.fontIndex) { presetFonts[0] }.fontFamily
 
+    // 音量键翻页
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(bgColor)
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown) {
+                    when (event.key) {
+                        Key.VolumeUp -> {
+                            viewModel.loadPreviousChapter()
+                            true
+                        }
+                        Key.VolumeDown -> {
+                            viewModel.loadNextChapter()
+                            true
+                        }
+                        else -> false
+                    }
+                } else false
+            }
     ) {
         when {
             uiState.isLoading -> {
@@ -67,74 +97,39 @@ fun ReaderScreen(
                 )
             }
             else -> {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                        .clickable { showMenu = !showMenu }
-                        .padding(horizontal = 16.dp)
-                ) {
-                    Spacer(modifier = Modifier.height(48.dp))
-
-                    Text(
-                        text = uiState.chapterTitle,
-                        style = TextStyle(
-                            fontFamily = fontFamily,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp,
-                            color = textColor
-                        ),
-                        modifier = Modifier.padding(bottom = 16.dp)
+                when (readerSettings.pageFlipMode) {
+                    PageFlipMode.SCROLL -> ScrollModeContent(
+                        uiState = uiState,
+                        viewModel = viewModel,
+                        textColor = textColor,
+                        fontFamily = fontFamily,
+                        fontSize = readerSettings.fontSize,
+                        lineHeight = readerSettings.lineHeight,
+                        onToggleMenu = { showMenu = !showMenu }
                     )
-
-                    Text(
-                        text = uiState.content,
-                        style = TextStyle(
-                            fontFamily = fontFamily,
-                            fontSize = readerSettings.fontSize.sp,
-                            lineHeight = (readerSettings.fontSize * readerSettings.lineHeight).sp,
-                            color = textColor
-                        )
+                    PageFlipMode.SLIDE -> SlideModeContent(
+                        uiState = uiState,
+                        viewModel = viewModel,
+                        textColor = textColor,
+                        fontFamily = fontFamily,
+                        fontSize = readerSettings.fontSize,
+                        lineHeight = readerSettings.lineHeight,
+                        onToggleMenu = { showMenu = !showMenu }
                     )
-
-                    Spacer(modifier = Modifier.height(32.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        if (viewModel.hasPreviousChapter()) {
-                            OutlinedButton(onClick = { viewModel.loadPreviousChapter() }) {
-                                Icon(
-                                    imageVector = Icons.Default.ArrowBack,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("上一章")
-                            }
-                        } else {
-                            Spacer(modifier = Modifier.width(1.dp))
-                        }
-
-                        if (viewModel.hasNextChapter()) {
-                            Button(onClick = { viewModel.loadNextChapter() }) {
-                                Text("下一章")
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Icon(
-                                    imageVector = Icons.Default.ArrowForward,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(64.dp))
+                    PageFlipMode.SIMULATION -> SimulationModeContent(
+                        uiState = uiState,
+                        viewModel = viewModel,
+                        textColor = textColor,
+                        fontFamily = fontFamily,
+                        fontSize = readerSettings.fontSize,
+                        lineHeight = readerSettings.lineHeight,
+                        onToggleMenu = { showMenu = !showMenu }
+                    )
                 }
             }
         }
 
+        // 顶部菜单
         if (showMenu) {
             TopAppBar(
                 title = { Text(uiState.chapterTitle, maxLines = 1) },
@@ -166,6 +161,7 @@ fun ReaderScreen(
             )
         }
 
+        // 底部菜单
         if (showMenu) {
             BottomAppBar(
                 containerColor = bgColor.copy(alpha = 0.9f),
@@ -209,6 +205,7 @@ fun ReaderScreen(
             }
         }
 
+        // 设置面板
         if (showSettings) {
             ReaderSettingsPanel(
                 settings = readerSettings,
@@ -222,6 +219,7 @@ fun ReaderScreen(
             )
         }
 
+        // 章节目录
         if (showChapterList) {
             ChapterListDrawer(
                 chapters = viewModel.getChapterList(),
@@ -232,6 +230,258 @@ fun ReaderScreen(
                 },
                 onDismiss = { showChapterList = false }
             )
+        }
+    }
+}
+
+// ==================== 上下滚动模式 ====================
+
+@Composable
+private fun ScrollModeContent(
+    uiState: ReaderUiState,
+    viewModel: ReaderViewModel,
+    textColor: Color,
+    fontFamily: androidx.compose.ui.text.font.FontFamily,
+    fontSize: Float,
+    lineHeight: Float,
+    onToggleMenu: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .clickable(onClick = onToggleMenu)
+            .padding(horizontal = 16.dp)
+    ) {
+        Spacer(modifier = Modifier.height(48.dp))
+
+        Text(
+            text = uiState.chapterTitle,
+            style = TextStyle(
+                fontFamily = fontFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp,
+                color = textColor
+            ),
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        Text(
+            text = uiState.content,
+            style = TextStyle(
+                fontFamily = fontFamily,
+                fontSize = fontSize.sp,
+                lineHeight = (fontSize * lineHeight).sp,
+                color = textColor
+            )
+        )
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        // 上下章按钮
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            if (viewModel.hasPreviousChapter()) {
+                OutlinedButton(onClick = { viewModel.loadPreviousChapter() }) {
+                    Icon(Icons.Default.ArrowBack, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("上一章")
+                }
+            } else {
+                Spacer(Modifier.width(1.dp))
+            }
+            if (viewModel.hasNextChapter()) {
+                Button(onClick = { viewModel.loadNextChapter() }) {
+                    Text("下一章")
+                    Spacer(Modifier.width(4.dp))
+                    Icon(Icons.Default.ArrowForward, null, Modifier.size(18.dp))
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(64.dp))
+    }
+}
+
+// ==================== 左右滑动模式 ====================
+
+@Composable
+private fun SlideModeContent(
+    uiState: ReaderUiState,
+    viewModel: ReaderViewModel,
+    textColor: Color,
+    fontFamily: androidx.compose.ui.text.font.FontFamily,
+    fontSize: Float,
+    lineHeight: Float,
+    onToggleMenu: () -> Unit
+) {
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    var isAnimating by remember { mutableStateOf(false) }
+    val animatedOffset by animateFloatAsState(
+        targetValue = if (isAnimating) 0f else dragOffset,
+        animationSpec = tween(200),
+        finishedListener = { isAnimating = false },
+        label = "slide"
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragStart = { dragOffset = 0f },
+                    onDragEnd = {
+                        if (abs(dragOffset) > 100) {
+                            if (dragOffset > 0 && viewModel.hasPreviousChapter()) {
+                                viewModel.loadPreviousChapter()
+                            } else if (dragOffset < 0 && viewModel.hasNextChapter()) {
+                                viewModel.loadNextChapter()
+                            }
+                        }
+                        isAnimating = true
+                        dragOffset = 0f
+                    },
+                    onHorizontalDrag = { _, dragAmount ->
+                        dragOffset += dragAmount
+                    }
+                )
+            }
+            .clickable(onClick = onToggleMenu)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { translationX = animatedOffset }
+                .padding(horizontal = 16.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Spacer(modifier = Modifier.height(48.dp))
+
+            Text(
+                text = uiState.chapterTitle,
+                style = TextStyle(
+                    fontFamily = fontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    color = textColor
+                ),
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+
+            Text(
+                text = uiState.content,
+                style = TextStyle(
+                    fontFamily = fontFamily,
+                    fontSize = fontSize.sp,
+                    lineHeight = (fontSize * lineHeight).sp,
+                    color = textColor
+                )
+            )
+
+            Spacer(modifier = Modifier.height(64.dp))
+        }
+
+        // 左右滑动提示
+        if (abs(animatedOffset) > 50) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 32.dp),
+                contentAlignment = if (animatedOffset > 0) Alignment.CenterStart else Alignment.CenterEnd
+            ) {
+                Text(
+                    text = if (animatedOffset > 0) "上一章" else "下一章",
+                    color = textColor.copy(alpha = 0.3f),
+                    fontSize = 16.sp
+                )
+            }
+        }
+    }
+}
+
+// ==================== 仿真翻页模式 ====================
+
+@Composable
+private fun SimulationModeContent(
+    uiState: ReaderUiState,
+    viewModel: ReaderViewModel,
+    textColor: Color,
+    fontFamily: androidx.compose.ui.text.font.FontFamily,
+    fontSize: Float,
+    lineHeight: Float,
+    onToggleMenu: () -> Unit
+) {
+    // 仿真翻页使用左右滑动 + 翻转动画效果
+    var offsetX by remember { mutableFloatStateOf(0f) }
+    var pageFlipped by remember { mutableStateOf(false) }
+
+    val rotation by animateFloatAsState(
+        targetValue = if (pageFlipped) 0f else (offsetX / 5f).coerceIn(-30f, 30f),
+        animationSpec = tween(300),
+        label = "rotation"
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragEnd = {
+                        if (abs(offsetX) > 100) {
+                            if (offsetX > 0 && viewModel.hasPreviousChapter()) {
+                                viewModel.loadPreviousChapter()
+                            } else if (offsetX < 0 && viewModel.hasNextChapter()) {
+                                viewModel.loadNextChapter()
+                            }
+                        }
+                        pageFlipped = true
+                        offsetX = 0f
+                    },
+                    onHorizontalDrag = { _, dragAmount ->
+                        offsetX += dragAmount
+                        pageFlipped = false
+                    }
+                )
+            }
+            .clickable(onClick = onToggleMenu)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    // 仿真翻页：沿Y轴旋转
+                    rotationY = rotation
+                    cameraDistance = 12f * density
+                }
+                .padding(horizontal = 16.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Spacer(modifier = Modifier.height(48.dp))
+
+            Text(
+                text = uiState.chapterTitle,
+                style = TextStyle(
+                    fontFamily = fontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    color = textColor
+                ),
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+
+            Text(
+                text = uiState.content,
+                style = TextStyle(
+                    fontFamily = fontFamily,
+                    fontSize = fontSize.sp,
+                    lineHeight = (fontSize * lineHeight).sp,
+                    color = textColor
+                )
+            )
+
+            Spacer(modifier = Modifier.height(64.dp))
         }
     }
 }
