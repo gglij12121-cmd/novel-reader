@@ -15,7 +15,7 @@ object Constants {
      * 笔趣阁 - 常用镜像站
      * 特点：HTML结构简单，反爬较弱
      */
-    const val BIQUGE_BASE_URL = "https://www.bbiquge.cc"
+    const val BIQUGE_BASE_URL = "https://www.biquge.co"
     const val BIQUGE_SEARCH_URL = "$BIQUGE_BASE_URL/search.php"
     const val BIQUGE_NAME = "笔趣阁"
 
@@ -23,7 +23,7 @@ object Constants {
      * 八一中文网 - 常用镜像站
      * 特点：结构规整，内容丰富
      */
-    const val BAYI_BASE_URL = "https://www.81zw.us"
+    const val BAYI_BASE_URL = "https://www.81zw.com"
     const val BAYI_SEARCH_URL = "$BAYI_BASE_URL/search.php"
     const val BAYI_NAME = "八一中文网"
 

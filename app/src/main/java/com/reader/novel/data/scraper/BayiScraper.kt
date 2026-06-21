@@ -12,11 +12,6 @@ import com.reader.novel.util.Constants
  * - 结构规整，内容丰富
  * - 反爬措施较弱
  * - HTML结构清晰
- *
- * 页面结构：
- * - 搜索: /search.php?keyword=xxx
- * - 详情: /book/xxx/
- * - 章节: /book/xxx/xxx.html
  */
 class BayiScraper : BaseScraper() {
 
@@ -25,31 +20,20 @@ class BayiScraper : BaseScraper() {
 
     /**
      * 搜索小说
-     *
-     * 八一中文网搜索页面结构：
-     * <div class="novelslist">
-     *   <li>
-     *     <span class="s2"><a href="详情URL">书名</a></span>
-     *     <span class="s4">作者</span>
-     *     <span class="s6">最新章节</span>
-     *   </li>
-     * </div>
      */
     override suspend fun search(keyword: String): SearchResult {
         return try {
             val url = "${Constants.BAYI_SEARCH_URL}?keyword=${java.net.URLEncoder.encode(keyword, "UTF-8")}"
             val doc = fetchDocument(url)
 
-            val books = doc.select("div.novelslist li, table.tb li").mapNotNull { element ->
+            val books = doc.select("div.novelslist li, table.tb li, div.search-item, div.book-item, ul.novels-list li").mapNotNull { element ->
                 try {
-                    val titleElement = element.selectFirst("a") ?: return@mapNotNull null
-                    val title = titleElement.text().trim()
+                    val titleElement = element.selectFirst("a[href*=book], .book-name a, h3 a, a[title]") ?: return@mapNotNull null
+                    val title = titleElement.text().trim().ifEmpty { titleElement.attr("title") }
                     val detailUrl = titleElement.attr("href")
 
-                    // 跳过表头
-                    if (title == "书名" || title.isEmpty()) return@mapNotNull null
+                    if (title.isEmpty() || title == "书名") return@mapNotNull null
 
-                    // 补全URL
                     val fullUrl = if (detailUrl.startsWith("http")) {
                         detailUrl
                     } else if (detailUrl.startsWith("/")) {
@@ -58,42 +42,37 @@ class BayiScraper : BaseScraper() {
                         "${Constants.BAYI_BASE_URL}/$detailUrl"
                     }
 
-                    val author = element.select("span").getOrNull(1)?.text()?.trim() ?: ""
-                    val latestChapter = element.select("span").getOrNull(3)?.text()?.trim() ?: ""
+                    val author = element.selectFirst(".author, .s4, .book-author")?.text()?.trim() ?: ""
+                    val latestChapter = element.selectFirst(".new-chapter, .s6, .latest")?.text()?.trim() ?: ""
+                    val description = element.selectFirst(".intro, .book-desc")?.text()?.trim() ?: ""
 
                     Book(
                         title = title,
                         author = author,
                         source = sourceId,
                         sourceUrl = fullUrl,
-                        latestChapter = latestChapter
+                        latestChapter = latestChapter,
+                        description = description
                     )
                 } catch (e: Exception) {
                     null
                 }
             }
 
-            // 如果上面的选择器没有结果，尝试另一种结构
             if (books.isEmpty()) {
-                val altBooks = doc.select("div.booklist li, .search-item").mapNotNull { element ->
+                val altBooks = doc.select("table tr, div.list-item, li").mapNotNull { element ->
                     try {
-                        val titleElement = element.selectFirst("a") ?: return@mapNotNull null
-                        val title = titleElement.text().trim()
-                        val detailUrl = titleElement.attr("href")
+                        val link = element.selectFirst("a") ?: return@mapNotNull null
+                        val title = link.text().trim()
+                        val href = link.attr("href")
 
-                        if (title.isEmpty()) return@mapNotNull null
+                        if (title.isEmpty() || title == "书名" || title.length < 2) return@mapNotNull null
 
-                        val fullUrl = if (detailUrl.startsWith("http")) {
-                            detailUrl
-                        } else {
-                            "${Constants.BAYI_BASE_URL}$detailUrl"
-                        }
-
-                        val author = element.selectFirst(".author, .s4")?.text()?.trim() ?: ""
+                        val fullUrl = if (href.startsWith("http")) href else "${Constants.BAYI_BASE_URL}$href"
 
                         Book(
                             title = title,
-                            author = author,
+                            author = element.select("td, span, .author").getOrNull(1)?.text()?.trim() ?: "",
                             source = sourceId,
                             sourceUrl = fullUrl
                         )
@@ -117,28 +96,15 @@ class BayiScraper : BaseScraper() {
 
     /**
      * 获取小说详情和章节列表
-     *
-     * 详情页结构：
-     * <div id="info">
-     *   <h1>书名</h1>
-     *   <p>作者：xxx</p>
-     * </div>
-     * <div id="intro">简介</div>
-     * <div id="list">
-     *   <dl>
-     *     <dd><a href="章节URL">章节标题</a></dd>
-     *   </dl>
-     * </div>
      */
     override suspend fun getBookDetail(bookUrl: String): Pair<Book, List<Chapter>> {
         val doc = fetchDocument(bookUrl)
 
-        // 解析书籍信息
-        val title = doc.selectFirst("#info h1, .booktitle h1")?.text()?.trim() ?: ""
-        val author = doc.select("#info p, .booktitle p").firstOrNull()?.text()
+        val title = doc.selectFirst("h1, #info h1, .book-title, .book-name")?.text()?.trim() ?: ""
+        val author = doc.selectFirst("#info p, .book-author, .author, .writer")?.text()
             ?.replace("作者：", "")?.replace("作者:", "")?.trim() ?: ""
-        val description = doc.selectFirst("#intro, .bookintro")?.text()?.trim() ?: ""
-        val coverUrl = doc.selectFirst("#fmimg img, .bookimg img")?.attr("src") ?: ""
+        val description = doc.selectFirst("#intro, .bookintro, .intro, .book-desc")?.text()?.trim() ?: ""
+        val coverUrl = doc.selectFirst("#fmimg img, .bookimg img, .cover img")?.attr("src") ?: ""
         val latestChapter = doc.select("#info p").lastOrNull()?.text()
             ?.replace("最新章节：", "")?.replace("最新章节:", "")?.trim() ?: ""
 
@@ -152,9 +118,8 @@ class BayiScraper : BaseScraper() {
             latestChapter = latestChapter
         )
 
-        // 解析章节列表
         val chapters = mutableListOf<Chapter>()
-        val chapterElements = doc.select("#list dl dd a, .booklist a")
+        val chapterElements = doc.select("#list dl dd a, .booklist a, .chapter-list a, a[href*=chapter], a[href*=.html]")
 
         chapterElements.forEachIndexed { index, element ->
             val chapterTitle = element.text().trim()
@@ -163,8 +128,10 @@ class BayiScraper : BaseScraper() {
             if (chapterTitle.isNotEmpty()) {
                 val fullUrl = if (chapterUrl.startsWith("http")) {
                     chapterUrl
-                } else {
+                } else if (chapterUrl.startsWith("/")) {
                     "${Constants.BAYI_BASE_URL}$chapterUrl"
+                } else {
+                    "${Constants.BAYI_BASE_URL}/$chapterUrl"
                 }
 
                 chapters.add(
@@ -182,22 +149,14 @@ class BayiScraper : BaseScraper() {
 
     /**
      * 获取章节正文内容
-     *
-     * 章节页结构：
-     * <div id="content">
-     *   正文内容...
-     * </div>
      */
     override suspend fun getChapterContent(chapterUrl: String): String {
         val doc = fetchDocument(chapterUrl)
 
-        // 获取正文内容
-        val contentElement = doc.selectFirst("#content, .content, #booktext") ?: return ""
+        val contentElement = doc.selectFirst("#content, .content, #booktext, .chapter-content, #chaptercontent") ?: return ""
 
-        // 获取HTML内容并清理
         val rawContent = contentElement.html()
 
-        // 清理广告和无用内容
         return cleanContent(rawContent)
     }
 }
