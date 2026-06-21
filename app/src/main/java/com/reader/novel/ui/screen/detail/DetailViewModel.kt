@@ -30,9 +30,6 @@ class DetailViewModel @Inject constructor(
 
     /**
      * 加载书籍详情
-     *
-     * @param bookUrl 书籍详情页URL
-     * @param source 来源标识
      */
     fun loadBookDetail(bookUrl: String, source: String) {
         viewModelScope.launch {
@@ -57,7 +54,7 @@ class DetailViewModel @Inject constructor(
                 // 如果在书架上，获取本地书籍ID
                 if (isOnBookshelf) {
                     val localBook = bookRepository.getBookById(
-                        bookRepository.addToBookshelf(book)  // 确保存在
+                        bookRepository.addToBookshelf(book)
                     )
                     currentBookId = localBook?.id ?: 0L
                 }
@@ -66,7 +63,8 @@ class DetailViewModel @Inject constructor(
                     isLoading = false,
                     book = book,
                     chapters = chapters,
-                    isOnBookshelf = isOnBookshelf
+                    isOnBookshelf = isOnBookshelf,
+                    isChapterListExpanded = true
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
@@ -86,17 +84,71 @@ class DetailViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 if (_uiState.value.isOnBookshelf) {
-                    // 从书架移除
                     bookRepository.removeFromBookshelf(currentBookId)
                     _uiState.value = _uiState.value.copy(isOnBookshelf = false)
                 } else {
-                    // 加入书架
                     currentBookId = bookRepository.addToBookshelf(book)
                     _uiState.value = _uiState.value.copy(isOnBookshelf = true)
                 }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     error = "操作失败: ${e.message}"
+                )
+            }
+        }
+    }
+
+    /**
+     * 切换章节列表展开/收起
+     */
+    fun toggleChapterList() {
+        _uiState.value = _uiState.value.copy(
+            isChapterListExpanded = !_uiState.value.isChapterListExpanded
+        )
+    }
+
+    /**
+     * 缓存整本书
+     */
+    fun cacheBook() {
+        val book = currentBook ?: return
+        val bookUrl = book.sourceUrl
+        val source = book.source
+
+        if (currentBookId == 0L) {
+            _uiState.value = _uiState.value.copy(
+                error = "请先加入书架"
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isCaching = true,
+                cacheProgress = 0,
+                cacheTotal = _uiState.value.chapters.size
+            )
+
+            try {
+                bookRepository.cacheBook(
+                    bookId = currentBookId,
+                    bookUrl = bookUrl,
+                    source = source
+                ) { current, total ->
+                    _uiState.value = _uiState.value.copy(
+                        cacheProgress = current,
+                        cacheTotal = total
+                    )
+                }
+
+                _uiState.value = _uiState.value.copy(
+                    isCaching = false,
+                    cacheProgress = _uiState.value.cacheTotal
+                )
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isCaching = false,
+                    error = "缓存失败: ${e.message}"
                 )
             }
         }
@@ -121,5 +173,9 @@ data class DetailUiState(
     val book: Book? = null,
     val chapters: List<Chapter> = emptyList(),
     val isOnBookshelf: Boolean = false,
+    val isChapterListExpanded: Boolean = false,
+    val isCaching: Boolean = false,
+    val cacheProgress: Int = 0,
+    val cacheTotal: Int = 0,
     val error: String? = null
 )

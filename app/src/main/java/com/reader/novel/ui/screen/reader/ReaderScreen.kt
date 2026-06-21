@@ -12,6 +12,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -21,20 +23,17 @@ import com.reader.novel.ui.components.LoadingIndicator
 import com.reader.novel.ui.theme.ReaderColors
 import com.reader.novel.ui.screen.reader.components.ChapterListDrawer
 import com.reader.novel.ui.screen.reader.components.ReaderSettingsPanel
+import com.reader.novel.ui.screen.reader.components.presetFonts
 
 /**
- * 阅读器页面
+ * 阅读器页面 - 全新设计
  *
  * 功能：
  * 1. 显示章节正文
  * 2. 上下章切换
- * 3. 阅读设置面板
+ * 3. 阅读设置面板（字体、护眼模式）
  * 4. 目录侧边栏
- *
- * @param bookId 书籍ID
- * @param initialChapterIndex 初始章节索引
- * @param onNavigateBack 返回
- * @param viewModel 阅读器ViewModel
+ * 5. 夜间模式
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,12 +61,17 @@ fun ReaderScreen(
         ReaderColors.White
     }
 
-    // 文字颜色 (深色背景用白字)
+    // 文字颜色（深色背景用白字）
     val textColor = if (readerSettings.bgColorIndex >= 5) {
         Color.White
     } else {
         Color.Black
     }
+
+    // 字体
+    val fontFamily = presetFonts.getOrElse(readerSettings.fontIndex) {
+        presetFonts[0]
+    }.fontFamily
 
     Box(
         modifier = Modifier
@@ -98,20 +102,24 @@ fun ReaderScreen(
                     // 章节标题
                     Text(
                         text = uiState.chapterTitle,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = textColor,
+                        style = TextStyle(
+                            fontFamily = fontFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp,
+                            color = textColor
+                        ),
                         modifier = Modifier.padding(bottom = 16.dp)
                     )
 
                     // 正文内容
                     Text(
                         text = uiState.content,
-                        style = MaterialTheme.typography.bodyLarge.copy(
+                        style = TextStyle(
+                            fontFamily = fontFamily,
                             fontSize = readerSettings.fontSize.sp,
-                            lineHeight = (readerSettings.fontSize * readerSettings.lineHeight).sp
-                        ),
-                        color = textColor
+                            lineHeight = (readerSettings.fontSize * readerSettings.lineHeight).sp,
+                            color = textColor
+                        )
                     )
 
                     Spacer(modifier = Modifier.height(32.dp))
@@ -264,6 +272,8 @@ fun ReaderScreen(
                 onFontSizeChange = { viewModel.updateFontSize(it) },
                 onLineHeightChange = { viewModel.updateLineHeight(it) },
                 onBgColorChange = { viewModel.updateBgColorIndex(it) },
+                onFontChange = { viewModel.updateFontIndex(it) },
+                onPageFlipModeChange = { viewModel.updatePageFlipMode(it) },
                 onDismiss = { showSettings = false },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )

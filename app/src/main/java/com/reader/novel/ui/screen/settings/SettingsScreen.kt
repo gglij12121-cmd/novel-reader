@@ -13,16 +13,14 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 
 /**
- * 设置页面
+ * 设置页面 - 全新设计
  *
  * 功能：
- * 1. 深色模式切换
- * 2. 默认阅读设置
+ * 1. 外观设置（深色模式）
+ * 2. 阅读设置（默认字体、行距、背景）
  * 3. 缓存管理
- * 4. 关于信息
- *
- * @param onNavigateBack 返回
- * @param viewModel 设置ViewModel
+ * 4. 书源管理
+ * 5. 关于信息
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,15 +86,45 @@ fun SettingsScreen(
                     steps = 14,
                     valueText = "${"%.1f".format(settings.lineHeight)}倍"
                 )
+
+                // 背景颜色
+                SettingsClickable(
+                    title = "默认背景颜色",
+                    description = getBgColorName(settings.bgColorIndex),
+                    icon = Icons.Default.ColorLens,
+                    onClick = { /* TODO: 显示颜色选择器 */ }
+                )
             }
 
-            // 数据管理
-            SettingsSection(title = "数据管理") {
+            // 缓存管理
+            SettingsSection(title = "缓存管理") {
                 SettingsClickable(
                     title = "清除缓存",
                     description = "清除已下载的章节内容",
                     icon = Icons.Default.DeleteSweep,
                     onClick = { viewModel.clearCache() }
+                )
+                SettingsClickable(
+                    title = "缓存大小",
+                    description = "查看缓存占用空间",
+                    icon = Icons.Default.Storage,
+                    onClick = { /* TODO: 显示缓存大小 */ }
+                )
+            }
+
+            // 书源管理
+            SettingsSection(title = "书源管理") {
+                SettingsClickable(
+                    title = "书源列表",
+                    description = "管理小说来源网站",
+                    icon = Icons.Default.Source,
+                    onClick = { /* TODO: 显示书源列表 */ }
+                )
+                SettingsClickable(
+                    title = "导入书源",
+                    description = "从文件导入书源配置",
+                    icon = Icons.Default.FileUpload,
+                    onClick = { /* TODO: 导入书源 */ }
                 )
             }
 
@@ -108,10 +136,38 @@ fun SettingsScreen(
                     icon = Icons.Default.Info,
                     onClick = { /* TODO: 显示关于对话框 */ }
                 )
+                SettingsClickable(
+                    title = "检查更新",
+                    description = "检查是否有新版本",
+                    icon = Icons.Default.Update,
+                    onClick = { /* TODO: 检查更新 */ }
+                )
+                SettingsClickable(
+                    title = "意见反馈",
+                    description = "提交问题或建议",
+                    icon = Icons.Default.Feedback,
+                    onClick = { /* TODO: 反馈 */ }
+                )
             }
 
             Spacer(modifier = Modifier.height(32.dp))
         }
+    }
+}
+
+/**
+ * 获取背景颜色名称
+ */
+private fun getBgColorName(index: Int): String {
+    return when (index) {
+        0 -> "白色"
+        1 -> "护眼绿"
+        2 -> "羊皮纸"
+        3 -> "浅黄"
+        4 -> "浅灰"
+        5 -> "深色"
+        6 -> "纯黑"
+        else -> "白色"
     }
 }
 

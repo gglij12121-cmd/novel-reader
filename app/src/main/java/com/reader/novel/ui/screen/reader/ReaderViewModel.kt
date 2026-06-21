@@ -38,9 +38,6 @@ class ReaderViewModel @Inject constructor(
 
     /**
      * 初始化阅读器
-     *
-     * @param bookId 书籍ID
-     * @param initialChapterIndex 初始章节索引
      */
     fun initialize(bookId: Long, initialChapterIndex: Int) {
         this.bookId = bookId
@@ -82,8 +79,6 @@ class ReaderViewModel @Inject constructor(
 
     /**
      * 加载指定章节
-     *
-     * @param chapterIndex 章节索引
      */
     fun loadChapter(chapterIndex: Int) {
         if (chapterIndex < 0 || chapterIndex >= chapters.size) return
@@ -185,6 +180,13 @@ class ReaderViewModel @Inject constructor(
     }
 
     /**
+     * 更新字体索引
+     */
+    fun updateFontIndex(index: Int) {
+        _readerSettings.value = _readerSettings.value.copy(fontIndex = index)
+    }
+
+    /**
      * 更新翻页模式
      */
     fun updatePageFlipMode(mode: PageFlipMode) {
@@ -215,12 +217,14 @@ data class ReaderUiState(
  * @property fontSize 字体大小
  * @property lineHeight 行间距倍数
  * @property bgColorIndex 背景颜色索引
+ * @property fontIndex 字体索引
  * @property pageFlipMode 翻页模式
  */
 data class ReaderSettings(
     val fontSize: Float = 18f,
     val lineHeight: Float = 1.5f,
     val bgColorIndex: Int = 0,
+    val fontIndex: Int = 0,
     val pageFlipMode: PageFlipMode = PageFlipMode.SLIDE
 )
 
