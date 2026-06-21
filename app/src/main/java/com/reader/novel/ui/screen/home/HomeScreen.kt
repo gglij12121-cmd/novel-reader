@@ -17,6 +17,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.reader.novel.ui.components.BookCard
+import com.reader.novel.ui.components.DebugLogDialog
 import com.reader.novel.ui.components.ErrorView
 import com.reader.novel.ui.components.LoadingIndicator
 
@@ -45,12 +46,27 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
+    var showDebugLog by remember { mutableStateOf(false) }
+
+    // 调试日志对话框
+    if (showDebugLog) {
+        DebugLogDialog(
+            onDismiss = { showDebugLog = false }
+        )
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("小说阅读器") },
                 actions = {
+                    // 调试日志按钮
+                    IconButton(onClick = { showDebugLog = true }) {
+                        Icon(
+                            imageVector = Icons.Default.BugReport,
+                            contentDescription = "调试日志"
+                        )
+                    }
                     // 书架按钮
                     IconButton(onClick = onNavigateToBookshelf) {
                         Icon(
