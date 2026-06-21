@@ -208,6 +208,9 @@ class BookSourceManager {
             url = url.split("|")[0]
         }
 
+        // 确保URL格式正确
+        com.reader.novel.ui.components.LogManager.addLog("最终URL: $url")
+
         return url
     }
 

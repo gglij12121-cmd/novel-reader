@@ -47,7 +47,7 @@ fun HomeScreen(
                     IconButton(onClick = { showDebugLog = true }) {
                         Icon(
                             imageVector = Icons.Default.Info,
-                            contentDescription = "调试日志"
+                            contentDescription = "调试日志 v1.1.0"
                         )
                     }
                     IconButton(onClick = onNavigateToBookshelf) {
