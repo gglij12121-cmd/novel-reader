@@ -3,9 +3,11 @@ package com.reader.novel.data.scraper
 import com.reader.novel.data.model.Book
 import com.reader.novel.data.model.Chapter
 import com.reader.novel.data.model.SearchResult
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
@@ -105,21 +107,25 @@ class BookSourceManager {
         com.reader.novel.ui.components.LogManager.addLog("URL: $searchUrl")
 
         return try {
-            // 使用OkHttp请求，模拟真实浏览器
-            val request = Request.Builder()
-                .url(searchUrl)
-                .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
-                .addHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
-                .addHeader("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
-                .addHeader("Accept-Encoding", "gzip, deflate")
-                .addHeader("Connection", "keep-alive")
-                .addHeader("Referer", source.url)
-                .build()
+            // 使用OkHttp请求，在IO线程执行
+            val result = withContext(Dispatchers.IO) {
+                val request = Request.Builder()
+                    .url(searchUrl)
+                    .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+                    .addHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+                    .addHeader("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+                    .addHeader("Accept-Encoding", "gzip, deflate")
+                    .addHeader("Connection", "keep-alive")
+                    .addHeader("Referer", source.url)
+                    .build()
 
-            val response = client.newCall(request).execute()
-            val html = response.body?.string() ?: ""
-            val statusCode = response.code
+                val response = client.newCall(request).execute()
+                val html = response.body?.string() ?: ""
+                val statusCode = response.code
+                Pair(statusCode, html)
+            }
 
+            val (statusCode, html) = result
             com.reader.novel.ui.components.LogManager.addLog("响应状态: $statusCode, 长度: ${html.length}")
 
             if (html.isEmpty() || statusCode != 200) {
