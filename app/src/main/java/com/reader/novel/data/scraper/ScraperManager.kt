@@ -2,9 +2,11 @@ package com.reader.novel.data.scraper
 
 import com.reader.novel.data.model.SearchResult
 import com.reader.novel.util.Constants
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
 
 /**
  * 爬虫管理器
@@ -66,9 +68,9 @@ class ScraperManager {
      * @return 所有来源的搜索结果列表
      */
     suspend fun searchAll(keyword: String): List<SearchResult> = coroutineScope {
-        // 内置爬虫搜索
+        // 内置爬虫搜索 - 必须在IO线程执行网络请求
         val builtinResults = scrapers.values.map { scraper ->
-            async {
+            async(Dispatchers.IO) {
                 try {
                     scraper.search(keyword)
                 } catch (e: Exception) {
@@ -81,8 +83,10 @@ class ScraperManager {
             }
         }
 
-        // 书源搜索（最多并行5个）
-        val bookSourceResults = bookSourceManager.searchAll(keyword, maxSources = 5)
+        // 书源搜索（最多并行5个）- 也在IO线程
+        val bookSourceResults = withContext(Dispatchers.IO) {
+            bookSourceManager.searchAll(keyword, maxSources = 5)
+        }
 
         // 合并结果
         (builtinResults.awaitAll() + bookSourceResults)
@@ -99,7 +103,7 @@ class ScraperManager {
         // 检查是否是内置爬虫
         val scraper = scrapers[sourceId]
         if (scraper != null) {
-            return scraper.search(keyword)
+            return withContext(Dispatchers.IO) { scraper.search(keyword) }
         }
 
         // 检查是否是书源
@@ -107,8 +111,10 @@ class ScraperManager {
             val sourceName = sourceId.removePrefix("booksource_")
             val source = bookSourceManager.getAvailableSources().find { it.name == sourceName }
             if (source != null) {
-                return bookSourceManager.searchAll(keyword, maxSources = 1).firstOrNull()
-                    ?: SearchResult(source = sourceId, isSuccess = false, errorMessage = "搜索失败")
+                return withContext(Dispatchers.IO) {
+                    bookSourceManager.searchAll(keyword, maxSources = 1).firstOrNull()
+                        ?: SearchResult(source = sourceId, isSuccess = false, errorMessage = "搜索失败")
+                }
             }
         }
 
