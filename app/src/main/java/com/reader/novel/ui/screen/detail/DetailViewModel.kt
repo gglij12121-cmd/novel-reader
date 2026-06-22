@@ -73,18 +73,11 @@ class DetailViewModel @Inject constructor(
                 val (book, chapters) = result
                 currentBook = book
 
-                // 检查是否在书架上
+                // 自动加入书架以获取bookId（阅读/缓存都需要bookId）
                 val isOnBookshelf = bookRepository.isOnBookshelf(bookUrl)
+                currentBookId = bookRepository.addToBookshelf(book)
 
-                // 如果在书架上，获取本地书籍ID
-                if (isOnBookshelf) {
-                    val localBook = bookRepository.getBookById(
-                        bookRepository.addToBookshelf(book)
-                    )
-                    currentBookId = localBook?.id ?: 0L
-                }
-
-                LogManager.addLog("[详情] 加载成功: ${book.title}, 章节数: ${chapters.size}")
+                LogManager.addLog("[详情] 加载成功: ${book.title}, bookId=$currentBookId, 章节: ${chapters.size}")
 
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
