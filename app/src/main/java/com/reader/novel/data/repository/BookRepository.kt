@@ -165,8 +165,20 @@ class BookRepository @Inject constructor(
         }
 
         // 本地没有，从网络获取
-        val scraper = scraperManager.getScraper(source) ?: return "无法获取章节内容"
-        val content = scraper.getChapterContent(chapterUrl)
+        // 先尝试内置爬虫
+        val scraper = scraperManager.getScraper(source)
+        val content = if (scraper != null) {
+            scraper.getChapterContent(chapterUrl)
+        } else {
+            // 再尝试书源
+            val bookSource = scraperManager.getBookSourceManager()
+                .getAvailableSources().find { it.name == source }
+            if (bookSource != null) {
+                scraperManager.getBookSourceManager().getChapterContent(bookSource, chapterUrl)
+            } else {
+                "无法获取章节内容: 未找到来源 $source"
+            }
+        }
 
         // 保存到本地缓存
         if (cachedChapter != null) {
